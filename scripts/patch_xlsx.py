@@ -310,6 +310,12 @@ def main() -> None:
     args = parse_args()
     if not args.source.exists():
         raise SystemExit(f"Source not found: {args.source}")
+    if args.source.resolve() == args.output.resolve():
+        raise SystemExit(
+            f"--source and --output must be different files. "
+            f"This script never edits the source in place; pick a candidate path like "
+            f"{args.source.with_name(args.source.stem + '_candidate' + args.source.suffix).name}."
+        )
     patch = json.loads(args.patch.read_text(encoding="utf-8"))
 
     if args.dry_run:

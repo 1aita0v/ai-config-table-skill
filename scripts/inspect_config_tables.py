@@ -32,8 +32,8 @@ from typing import Any, Iterable
 SUPPORTED = {".xlsx", ".xlsm", ".csv", ".tsv", ".json"}
 
 KEY_EXACT = {"id", "key", "编号", "主键", "uid"}
-KEY_SUFFIX_RE = re.compile(r"_id$", re.IGNORECASE)
-KEY_CAMEL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*ID$")
+KEY_SUFFIX_RE = re.compile(r"_(id|key)$", re.IGNORECASE)
+KEY_CAMEL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*(ID|Id|Key)$")
 CHINESE_RE = re.compile(r"[一-鿿]")
 ASCII_FIELD_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 TYPE_ANNOTATION_VALUES = {
@@ -249,6 +249,39 @@ def detect_layout_hints(rows: list[list[str]], field_row_1based: int | None, met
     return hints
 
 
+def auto_detect_layout(rows: list[list[str]]) -> tuple[int, list[int], int]:
+    """Per-sheet auto-detection of (field_row, meta_rows, data_start_row), 1-based.
+
+    Strategy:
+    - Scan the first 8 rows.
+    - Pick the row that "looks most like ASCII field names" (CamelCase / snake_case).
+    - Above that row -> meta_rows. Annotation-looking rows immediately below -> meta_rows too.
+    - data_start_row = max(field_row, *meta_rows) + 1.
+    """
+    scan = rows[:8]
+    if not scan:
+        return 1, [], 2
+    best_field_row = 1
+    best_score = -1
+    for idx, row in enumerate(scan, start=1):
+        if not looks_ascii_field_row(row):
+            continue
+        score = sum(1 for v in row if v)
+        if score > best_score:
+            best_score = score
+            best_field_row = idx
+    if best_score < 0:
+        # No row looked like field names; fall back to guess.
+        best_field_row = guess_header(rows, 8) + 1
+    meta_rows = list(range(1, best_field_row))
+    next_row = best_field_row + 1
+    while next_row <= len(scan) and looks_type_annotation_row(scan[next_row - 1]):
+        meta_rows.append(next_row)
+        next_row += 1
+    data_start = max([best_field_row] + meta_rows) + 1
+    return best_field_row, sorted(meta_rows), data_start
+
+
 def resolve_header_layout(
     rows: list[list[str]],
     field_row_1based: int | None,
@@ -354,6 +387,10 @@ def inspect_excel(path: Path, args: argparse.Namespace) -> dict[str, Any]:
         sheet_hints = detect_layout_hints(rows, args.field_row, args.meta_rows)
         for hint in sheet_hints:
             file_hints.append(f"{ws.title}: {hint}")
+        # Per-sheet auto-detect — used by --patch-template regardless of user CLI args,
+        # since global CLI args don't fit heterogeneous-header workbooks.
+        auto_field_row, auto_meta_rows, auto_data_start = auto_detect_layout(rows)
+        auto_headers = rows[auto_field_row - 1] if rows and 0 <= auto_field_row - 1 < len(rows) else []
         sheets.append(
             {
                 "name": ws.title,
@@ -366,6 +403,16 @@ def inspect_excel(path: Path, args: argparse.Namespace) -> dict[str, Any]:
                 "data_start_row": data_start + 1,
                 "fields": field_summary(headers),
                 "samples": sample_rows(rows, data_start, headers, args.sample_rows),
+                "_auto": {
+                    "field_row": auto_field_row,
+                    "meta_rows": auto_meta_rows,
+                    "data_start_row": auto_data_start,
+                    "fields": [f["name"] for f in field_summary(auto_headers)],
+                    "key_field": next(
+                        (f["name"] for f in field_summary(auto_headers) if f.get("key_candidate")),
+                        None,
+                    ),
+                },
             }
         )
     return {
@@ -474,6 +521,14 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Comma-separated filename patterns or substrings to skip, e.g. '*-patch.json,backup*'.",
     )
+    parser.add_argument(
+        "--patch-template",
+        type=Path,
+        default=None,
+        help="Also write a pre-filled patch JSON skeleton to this path (one entry per "
+             "Excel sheet, with detected field_row / meta_rows / data_start_row / key_field). "
+             "Designed for the agent to fill in `updates` / `appends` without inventing the schema.",
+    )
     parser.add_argument("--max-files", type=int, default=200)
     parser.add_argument("--max-sheets", type=int, default=80)
     parser.add_argument("--max-scan-rows", type=int, default=200)
@@ -489,6 +544,51 @@ def parse_args() -> argparse.Namespace:
     args.meta_rows = parse_meta_rows(args.meta_rows)
     args.ignore = parse_ignore(args.ignore)
     return args
+
+
+def build_patch_template(inventory: dict[str, Any]) -> dict[str, Any]:
+    """Build a skeleton patch JSON the agent can fill in.
+
+    One entry per Excel sheet (CSV/TSV/JSON files are skipped — patch_xlsx.py is
+    Excel-only). Each entry uses **per-sheet auto-detection** (`_auto` block on
+    each sheet dict) so heterogeneous-header workbooks come out correct, even if
+    the inspect CLI was passed a single global --field-row / --meta-rows.
+    """
+    sheets: list[dict[str, Any]] = []
+    for file_info in inventory["files"]:
+        if file_info.get("type") not in {"xlsx", "xlsm"}:
+            continue
+        for sheet in file_info["sheets"]:
+            auto = sheet.get("_auto") or {}
+            entry: dict[str, Any] = {
+                "sheet": sheet["name"],
+                "field_row": auto.get("field_row") or sheet.get("field_row"),
+                "data_start_row": auto.get("data_start_row") or sheet.get("data_start_row"),
+                "updates": [],
+                "appends": [],
+                "_fields_available": auto.get("fields")
+                or [f["name"] for f in sheet["fields"]],
+            }
+            meta_rows = auto.get("meta_rows") or []
+            if meta_rows:
+                entry["meta_rows"] = meta_rows
+            key_field = auto.get("key_field") or next(
+                (f["name"] for f in sheet["fields"] if f.get("key_candidate")),
+                None,
+            )
+            if key_field:
+                entry["key_field"] = key_field
+            sheets.append(entry)
+    return {
+        "_generated_by": "inspect_config_tables.py --patch-template",
+        "_help": (
+            "Fill `updates` (cell tweaks by key/field or row/col) and/or `appends` "
+            "(new rows by field name). See references/patch-format.md for the full spec. "
+            "Keys starting with '_' are documentation only and ignored by patch_xlsx.py."
+        ),
+        "_root": inventory["root"],
+        "sheets": sheets,
+    }
 
 
 def main() -> None:
@@ -511,6 +611,13 @@ def main() -> None:
         args.output.write_text(text, encoding="utf-8")
     else:
         sys.stdout.write(text)
+    if args.patch_template:
+        template = build_patch_template(inventory)
+        args.patch_template.parent.mkdir(parents=True, exist_ok=True)
+        args.patch_template.write_text(
+            json.dumps(template, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        sys.stderr.write(f"[inspect] patch template written to {args.patch_template}\n")
 
 
 if __name__ == "__main__":

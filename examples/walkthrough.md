@@ -21,9 +21,9 @@ python3 examples/build_sample.py
 | LocText | 2(中文 / 英文字段) | 5 |
 | Reward | 1 | 3 |
 
-## 1. Inspect
+## 1. Inspect(同时生成 patch JSON 骨架)
 
-用与 Item sheet 匹配的 field-row 跑 inspect:
+用与 Item sheet 匹配的 field-row 跑 inspect,**顺手生成 patch 骨架**:
 
 ```bash
 python3 scripts/inspect_config_tables.py \
@@ -31,8 +31,11 @@ python3 scripts/inspect_config_tables.py \
   --field-row 2 \
   --meta-rows 1,3,4 \
   --format md \
-  --output examples/inventory.md
+  --output examples/inventory.md \
+  --patch-template examples/patch_template.json
 ```
+
+打开 `examples/patch_template.json`,会看到为 Item / LocText / Reward 三张 sheet 都预填好了 `field_row` / `meta_rows` / `data_start_row` / `key_field`,你只需在 `updates` / `appends` 里写改动内容。**`_fields_available` 列出了可用的字段名 —— 不用再翻 inventory.md 抄字段**。
 
 打开 `examples/inventory.md`,应该看到:
 

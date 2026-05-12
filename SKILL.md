@@ -220,9 +220,13 @@ python3 scripts/inspect_config_tables.py --root /path/to/config --format md --ou
 python3 scripts/inspect_config_tables.py --root /path/to/config --field-row 2 --meta-rows 1,3
 # 跳过样例 patch:
 python3 scripts/inspect_config_tables.py --root /path/to/config --ignore '*-patch.json'
+# 同时生成一份 patch JSON 骨架(下一步直接在骨架上填,不用凭印象写):
+python3 scripts/inspect_config_tables.py --root /path/to/config --patch-template patch.json
 ```
 
 inspect 现在会自动建议:**如果第 1 行像中文显示名、第 2 行像英文字段名,会提示 `--field-row 2 --meta-rows 1`**。看到 hint 跟用户确认一下再走。
+
+**`--patch-template` 强烈推荐**:它会为每张 Excel sheet 预填 `field_row` / `meta_rows` / `data_start_row` / `key_field` 和 `_fields_available` 字段名列表。你只需要在 `updates` / `appends` 数组里加内容就行,**不要凭印象写 patch JSON 的 schema**。
 
 ### 2. 建项目档案(可选)
 
@@ -240,10 +244,14 @@ inspect 现在会自动建议:**如果第 1 行像中文显示名、第 2 行像
 
 ### 5. 生成副本
 
+**patch JSON 的精确格式见 [`references/patch-format.md`](references/patch-format.md)**(不要凭印象写 — 用 inspect 的 `--patch-template` 拿骨架,在骨架上填)。
+
 ```bash
 python3 scripts/patch_xlsx.py --source table.xlsx --output table_candidate.xlsx --patch changes.json --dry-run
 python3 scripts/patch_xlsx.py --source table.xlsx --output table_candidate.xlsx --patch changes.json
 ```
+
+`--source` 和 `--output` **必须是不同的文件**,脚本不会原地编辑 — 一开始就会报错。
 
 如果 `--output` 已存在,默认会自动加时间戳(`table_candidate_20260512_103045.xlsx`),不会报错。要强制覆盖加 `--force`,要严格报错加 `--strict`。
 
@@ -269,19 +277,21 @@ python3 scripts/validate_refs.py --workbook table_candidate.xlsx --field-row 2 -
 ## 速查:三条命令
 
 ```bash
-# A. 扫一个配置表文件夹
-python3 scripts/inspect_config_tables.py --root /path/to/config --format md --output inventory.md
+# A. 扫文件夹 + 同时拿到 patch JSON 骨架(强烈推荐)
+python3 scripts/inspect_config_tables.py --root /path/to/config --format md --output inventory.md --patch-template patch.json
 
-# B. 预览改动,生成副本
-python3 scripts/patch_xlsx.py --source x.xlsx --output x_candidate.xlsx --patch p.json --dry-run
-python3 scripts/patch_xlsx.py --source x.xlsx --output x_candidate.xlsx --patch p.json
+# B. 编辑 patch.json(填 updates / appends),格式见 references/patch-format.md
+#    然后预览 + 生成副本(注意:--source 和 --output 必须是不同文件)
+python3 scripts/patch_xlsx.py --source x.xlsx --output x_candidate.xlsx --patch patch.json --dry-run
+python3 scripts/patch_xlsx.py --source x.xlsx --output x_candidate.xlsx --patch patch.json
 
 # C. 对比 + 跨表引用对账
 python3 scripts/diff_config_tables.py --source x.xlsx --candidate x_candidate.xlsx --output diff.md
-python3 scripts/validate_refs.py --workbook x_candidate.xlsx --field-row 2 --meta-rows 1,3
+python3 scripts/validate_refs.py --workbook x_candidate.xlsx
 ```
 
 带样例数据走查:`examples/walkthrough.md`。
+patch JSON 格式参考:[`references/patch-format.md`](references/patch-format.md)。
 
 ## 操作原则
 
