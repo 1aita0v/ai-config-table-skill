@@ -1,65 +1,65 @@
-# AI Config Change Spec Template
+# AI 配表改动 Spec 模板
 
-Use this before medium/high risk AI配表 work.
+中 / 高风险的配表工作开干之前,先用这个模板想清楚。
 
 ```markdown
-# {Task} Config Spec
+# {任务名} 配表 Spec
 
-## Goal
+## 目标
 
-- User request:
-- Expected game/product behavior:
-- Non-goals:
+- 用户的诉求:
+- 期望的游戏 / 产品行为:
+- 不做什么(non-goals):
 
-## Source And Output
+## 数据源和输出
 
-- Source type: local / export / cloud sheet / platform API / project tool / mixed
-- Source project/root:
-- Target workbook/sheet:
-- Candidate output:
-- Writeback policy: candidate only / writeback after confirmation / no writeback
+- 数据源类型:本地 / 导出 / 云表 / 平台 API / 项目工具 / 混合
+- 数据源项目 / 根路径:
+- 目标工作簿 / sheet:
+- 副本输出路径:
+- 覆盖策略:只做副本 / 确认后覆盖 / 不覆盖
 
-## Current Evidence
+## 当前证据
 
-- Inventory/profile path:
-- Sample rows inspected:
-- Similar existing rows:
-- ID allocation evidence:
-- Relevant docs:
+- 清单 / 项目档案路径:
+- 已查的样本行:
+- 类似的已有行:
+- ID 分配的证据:
+- 相关文档:
 
-## Planned Changes
+## 计划改动
 
-| Action | Workbook | Sheet | Key/Row | Fields | Reason |
+| 动作 | 工作簿 | Sheet | Key / 行 | 字段 | 原因 |
 |---|---|---|---|---|---|
-| add/update/delete |  |  |  |  |  |
+| add / update / delete |  |  |  |  |  |
 
-## Cross-Table Impact
+## 跨表影响
 
-| Dependency | Needed? | Evidence | Action |
+| 依赖 | 需要改吗? | 证据 | 怎么做 |
 |---|---|---|---|
-| Localization | yes/no/unknown |  |  |
-| Prompt/Error text | yes/no/unknown |  |  |
-| Resource/Icon/Audio/Effect | yes/no/unknown |  |  |
-| Item/Reward | yes/no/unknown |  |  |
-| Condition/Unlock | yes/no/unknown |  |  |
-| Guide/Jump/Entry | yes/no/unknown |  |  |
-| Enum/Dictionary | yes/no/unknown |  |  |
+| 本地化 | yes / no / unknown |  |  |
+| 提示 / 错误文案 | yes / no / unknown |  |  |
+| 资源 / 图标 / 音频 / 特效 | yes / no / unknown |  |  |
+| 道具 / 奖励 | yes / no / unknown |  |  |
+| 解锁 / 条件 | yes / no / unknown |  |  |
+| 引导 / 跳转 / 入口 | yes / no / unknown |  |  |
+| 枚举 / 字典 | yes / no / unknown |  |  |
 
-## Patch Plan
+## Patch 计划
 
-- Patch file:
-- Script/tool:
-- Tables touched:
-- Fields intentionally changed:
-- Fields that must remain unchanged:
+- Patch 文件:
+- 用的脚本 / 工具:
+- 涉及的表:
+- 故意改的字段:
+- 必须保持不变的字段:
 
-## Acceptance Criteria
+## 验收条件
 
-- [ ] Target rows/fields match the requested behavior.
-- [ ] Primary keys are unique and follow project allocation rules.
-- [ ] Cross-table references exist or are marked not applicable with evidence.
-- [ ] Headers, formulas, styles, and unrelated sheets are preserved.
-- [ ] Candidate diff only contains intended changes.
-- [ ] Project parser/exporter can read the candidate, if available.
-- [ ] Human decision items are listed.
+- [ ] 目标行 / 字段 符合需求。
+- [ ] 主键唯一且符合项目分配规则。
+- [ ] 跨表引用存在,或被标记为 不适用 + 有证据。
+- [ ] 表头、公式、样式、其它无关 sheet 都没动。
+- [ ] 副本的 diff 只包含计划内的改动。
+- [ ] 如果项目有 parser / exporter,它能读这个副本。
+- [ ] 列出"需要人来决定"的事项。
 ```

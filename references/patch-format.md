@@ -1,6 +1,6 @@
-# Patch Format
+# Patch 格式
 
-`scripts/patch_xlsx.py` accepts a JSON file:
+`scripts/patch_xlsx.py` 接受一个 JSON 文件:
 
 ```json
 {
@@ -20,7 +20,7 @@
         {
           "row": 12,
           "col": "D",
-          "value": "Direct coordinate update"
+          "value": "直接按坐标改"
         }
       ],
       "appends": [
@@ -35,31 +35,31 @@
 }
 ```
 
-## Sheet Fields
+## Sheet 各字段含义
 
-- `sheet` — required sheet name.
-- `field_row` — 1-based row index that holds machine-readable field names. Use this for multi-row headers. (Alias: `header_row` is still accepted for backward compatibility with V2 patches.)
-- `meta_rows` — optional list of 1-based row indices that hold supplementary header info (Chinese display name, type annotation, comment). The patch script will not write into these rows; recorded purely for inventory clarity.
-- `data_start_row` — optional first data row. If omitted, defaults to the row after the last of `field_row` / `meta_rows`.
-- `key_field` — field name used by `updates` with `key`.
-- `updates` — list of direct or key-based cell updates.
-- `appends` — list of rows to append by field name or column letter.
+- `sheet` —— 必填,sheet 名。
+- `field_row` —— 1-based,标记"字段名行"。多行表头必填。(别名:`header_row` 仍兼容 V2 patch。)
+- `meta_rows` —— 1-based 列表,标记额外表头行(中文显示名、类型注释、注释)。patch 脚本不会写入这些行,仅供清单记录。
+- `data_start_row` —— 可选,数据起始行。不填则默认为 `field_row` / `meta_rows` 最后一行的下一行。
+- `key_field` —— `updates` 中按 `key` 定位用的字段名。
+- `updates` —— 单元格更新列表,支持按坐标或按 key 定位。
+- `appends` —— 追加新行,按字段名或列字母指定。
 
-If you omit `field_row` and `meta_rows` entirely, the script falls back to guessing a single-row header (same behavior as V2).
+`field_row` 和 `meta_rows` 全部省略时,脚本会猜单行表头(等同 V2 行为)。
 
-## Multi-Row Header Example
+## 多行表头样例
 
-A typical game config sheet:
+一个典型的游戏配置 sheet:
 
-| Row | Content |
+| 行号 | 内容 |
 |---:|---|
-| 1 | 道具ID / 名称 / 描述 / 图标   (Chinese display) |
-| 2 | ItemID / Name / Desc / Icon  (English field names — the parser uses these) |
-| 3 | int / string / string / string  (type annotations) |
-| 4 | 主键 / 文本 / 文本 / 资源引用  (comments) |
-| 5 | 10001 / Sword / A sword. / icon_sword  (first data row) |
+| 1 | 道具ID / 名称 / 描述 / 图标   (中文显示名) |
+| 2 | ItemID / Name / Desc / Icon  (英文字段名 —— parser 用这一行) |
+| 3 | int / string / string / string  (类型注释) |
+| 4 | 主键 / 文本 / 文本 / 资源引用  (注释) |
+| 5 | 10001 / Sword / A sword. / icon_sword  (第一行数据) |
 
-Corresponding patch:
+对应 patch:
 
 ```json
 {
@@ -78,21 +78,21 @@ Corresponding patch:
 }
 ```
 
-## Update Modes
+## 更新模式
 
-Direct coordinate:
+按坐标:
 
 ```json
 {"row": 12, "col": "D", "value": "x"}
 ```
 
-Key + field:
+按 key + 字段:
 
 ```json
 {"key": "10001", "field": "Name", "value": "x"}
 ```
 
-Key-based updates require `key_field` and a matching row in the sheet.
+按 key 的更新需要 `key_field` 字段,且 sheet 里要有匹配的行。
 
 ## Dry Run
 
@@ -100,12 +100,12 @@ Key-based updates require `key_field` and a matching row in the sheet.
 python3 scripts/patch_xlsx.py --source a.xlsx --output a_candidate.xlsx --patch p.json --dry-run
 ```
 
-Prints the planned cell changes (`sheet / row / col / before → after`) and append rows without writing to disk. Always dry-run before applying.
+打印计划改动(`sheet / row / col / before → after`)和追加行,但不写盘。**实际执行前永远先 dry-run**。
 
-## Safety
+## 安全保护
 
-- The source workbook is copied to `--output` before edits.
-- Existing output is not overwritten unless `--force` is passed.
-- Edited cells are marked yellow by default; pass `--no-mark` to skip.
-- `.xlsm` files are loaded with VBA preservation.
-- If patching errors out partway, the partially-written candidate is removed automatically so you don't trust a broken file.
+- 编辑前会先把源工作簿复制到 `--output`。
+- 已有的输出文件不会被覆盖,除非加 `--force`。
+- 被改的单元格默认标黄,加 `--no-mark` 跳过。
+- `.xlsm` 会保留 VBA。
+- patch 过程中报错时,半成品候选文件会被自动删掉 —— 防止你误信坏文件。

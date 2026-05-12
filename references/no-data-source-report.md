@@ -1,58 +1,58 @@
-# No Data Source Report
+# 找不到数据源 报告
 
-Use this template when a user asks to understand or edit a project's config tables, but no readable config data source is available.
+用户想了解 / 改一个项目的配表,但你拿不到任何可读的数据源时,用这个模板。
 
 ```markdown
-# No Data Source Report
+# 找不到数据源 报告
 
-## Result
+## 结果
 
-- Project:
-- Success: no
-- Reason:
+- 项目:
+- 成功:no
+- 原因:
 
-## Discovery Attempts
+## 已尝试
 
-| Source Type | Attempt | Result | Evidence |
+| 源类型 | 尝试 | 结果 | 证据 |
 |---|---|---|---|
-| Local files |  |  |  |
-| Exported files |  |  |  |
-| Cloud/table links |  |  |  |
-| Platform/admin table access |  |  |  |
-| Project tools/APIs |  |  |  |
-| Repo docs/scripts |  |  |  |
+| 本地文件 |  |  |  |
+| 导出文件 |  |  |  |
+| 云表 / 表格链接 |  |  |  |
+| 平台 / 后台访问 |  |  |  |
+| 项目工具 / API |  |  |  |
+| 仓库文档 / 脚本 |  |  |  |
 
-## What Can Be Concluded
+## 能下的结论
 
 - 
 
-## What Cannot Be Concluded
+## 不能下的结论
 
-- Table list.
-- Sheet/workbook roles.
-- Primary keys.
-- ID allocation rules.
-- Cross-table references.
-- Required support tables.
+- 表清单。
+- Sheet / 工作簿 的角色。
+- 主键。
+- ID 分配规则。
+- 跨表引用。
+- 必需的支撑表。
 
-## Needed To Continue
+## 继续工作需要什么
 
-Provide at least one:
+至少提供一项:
 
-- Exported config table files.
-- Local config root path.
-- Cloud sheet/table link or id with read permission.
-- Platform/admin table access with read permission.
-- Project export/query script.
-- 3-5 representative table samples plus naming/ID rules.
+- 导出的配置表文件。
+- 本地配置根目录。
+- 云表 / 表格链接 + 读权限。
+- 平台 / 后台 + 读权限。
+- 项目的导出 / 查询脚本。
+- 3-5 张代表性的表样本 + 命名 / ID 规则说明。
 
-## Skill Status
+## Skill 当前状态
 
-- Source routing:
-- Project profile:
-- Config reference:
-- Patch/diff scripts:
-- Validation:
+- 源路由:
+- 项目档案:
+- 配表知识库:
+- patch / diff 脚本:
+- 校验:
 ```
 
-Do not continue into table interpretation without data. A no-data-source report is a valid, safe outcome.
+没有数据时,不要继续做表的业务解读。"找不到数据源"报告本身就是一个合格的、安全的产出。

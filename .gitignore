@@ -11,7 +11,7 @@ __pycache__/
 .venv/
 venv/
 
-# Agent / user-generated artifacts that live next to the skill but shouldn't be tracked
+# 用户 / agent 在 skill 旁边生成的临时产物,不进版本
 *.bak.*
 *_candidate.xlsx
 *_candidate.csv
@@ -19,7 +19,7 @@ inventory.json
 inventory.md
 diff.md
 
-# Editor / IDE
+# 编辑器 / IDE
 .vscode/
 .idea/
 *.swp

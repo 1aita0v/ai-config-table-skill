@@ -1,101 +1,101 @@
-# Validation Checklist
+# 校验清单
 
-Use this after producing a candidate config table.
+生成候选配表后用这个清单走一遍。
 
-## Structural Checks
+## 结构性检查
 
-- Candidate file exists and opens/parses.
-- File type is preserved unless conversion is intentional.
-- Workbook sheet names are unchanged unless the spec says otherwise.
-- Header rows are unchanged unless the spec says otherwise.
-- Formula cells are unchanged unless the spec says otherwise.
-- Hidden sheets, merged cells, comments, freeze panes, and data validation are not intentionally relied on unless checked.
+- 候选文件存在,能正常打开 / 解析。
+- 除非有意转换,否则文件类型保持不变。
+- 除非 spec 允许,否则工作簿 sheet 名不动。
+- 除非 spec 允许,否则表头行不动。
+- 除非 spec 允许,否则公式格不动。
+- 隐藏 sheet、合并单元格、批注、冻结窗格、数据验证 —— 不依赖它们,除非你明确检查过。
 
-## openpyxl Re-save Caveats
+## openpyxl 重存注意
 
-`patch_xlsx.py` uses openpyxl, which can silently drop or alter:
+`patch_xlsx.py` 用的是 openpyxl,以下东西可能被静默丢掉或改写:
 
-- **Data validation dropdowns** in certain forms (long enum lists, cross-sheet references).
-- **Some conditional formatting** rules, especially complex ones authored in Excel.
-- **Embedded charts** created in old Excel versions.
-- **Printer settings**, page setup, custom views.
-- **Cell styles** beyond the basic font / fill / border / number-format set.
+- **数据验证下拉框**(长枚举、跨 sheet 引用 等场景下尤其)。
+- **部分条件格式**,Excel 里手工写的复杂规则尤其。
+- **嵌入图表**,老版 Excel 创建的尤其。
+- **打印设置**、页面布局、自定义视图。
+- **超出基础字体 / 填充 / 边框 / 数字格式 的样式**。
 
-These won't show up in `diff_config_tables.py` (it compares cell values). If your project relies on any of the above, open the candidate in Excel / WPS once before writeback and compare visually, or use a project-native exporter that goes through Excel's own object model.
+这些 **不会** 出现在 `diff_config_tables.py` 里(它只比较单元格的值)。如果你项目依赖以上任何东西,覆盖前先用 Excel / WPS 打开候选肉眼对比一次,或用项目自己走 Excel COM 的导出脚本。
 
-## Data Checks
+## 数据检查
 
-- Every planned row/key exists in the candidate.
-- Every planned field has the expected value.
-- No unintended changes appear in the diff.
-- Primary keys are non-empty and unique.
-- Required fields are non-empty.
-- Types and list separators match nearby examples.
-- New IDs do not collide with existing IDs.
+- 计划要改的每一行 / key 都存在于候选文件。
+- 计划要改的每一个字段都是预期值。
+- diff 里没有意料之外的改动。
+- 主键非空且唯一。
+- 必填字段非空。
+- 类型、分隔符 与邻近样本一致。
+- 新 ID 不与已有 ID 冲突。
 
-## Cross-Table Checks
+## 跨表检查
 
-Check only dependencies that the task can touch:
+只查这次任务可能影响到的依赖:
 
-- Localization/name/description keys.
-- Prompt/error text keys.
-- Resource/icon/audio/effect references.
-- Item/reward/drop references.
-- Unlock/condition references.
-- Entry/jump/guide references.
-- Battle/event/effect references.
-- Enum/dictionary values.
-- Generated export references.
+- 本地化 / 显示名 / 描述 key。
+- 提示 / 错误文案 key。
+- 资源 / 图标 / 音频 / 特效 引用。
+- 道具 / 奖励 / 掉落 引用。
+- 解锁 / 条件 引用。
+- 入口 / 跳转 / 引导 引用。
+- 战斗 / 事件 / 特效 引用。
+- 枚举 / 字典 值。
+- 生成产物的引用。
 
-For each dependency, mark one of:
+每个依赖项标一个:
 
-- `pass`: checked and present.
-- `not applicable`: explain why the task does not touch it.
-- `needs decision`: human/design decision needed.
-- `missing`: fix before writeback.
+- `pass`:已查,存在。
+- `not applicable`:本任务不涉及,说明原因。
+- `needs decision`:需要人 / 策划拍板。
+- `missing`:覆盖前必须解决。
 
-## Source Writeback Gate
+## 覆盖原表的门槛
 
-Writeback is allowed only when:
+只有以下条件全满足才允许覆盖原表:
 
-- User explicitly asked for writeback.
-- Candidate validation passed or exceptions are accepted.
-- Diff is reviewed.
-- Source lock/version/conflict policy is satisfied.
-- Backup or rollback path exists.
+- 用户明确要求覆盖。
+- 候选验证通过,或例外情况已被接受。
+- diff 已被复核。
+- 源文件的锁 / 版本 / 冲突 策略已满足。
+- 有备份或回滚路径。
 
-## Report Shape
+## 报告格式
 
 ```markdown
-# Config Validation Report
+# 配表校验报告
 
-## Summary
+## 摘要
 
-- Result:
-- Source:
-- Candidate:
+- 结论:
+- 源:
+- 候选:
 - Diff:
 
-## Passed
+## 通过项
 
-| Check | Evidence |
+| 检查 | 证据 |
 |---|---|
 |  |  |
 
-## Needs Decision
+## 需要决定的事
 
-| Item | Reason | Options |
+| 项 | 原因 | 选项 |
 |---|---|---|
 |  |  |  |
 
-## Missing Or Failed
+## 缺失或失败
 
-| Item | Evidence | Fix |
+| 项 | 证据 | 修复 |
 |---|---|---|
 |  |  |  |
 
-## Writeback Readiness
+## 覆盖准备度
 
-- Ready: yes/no
-- Blockers:
+- 是否就绪:yes / no
+- 阻塞:
 ```

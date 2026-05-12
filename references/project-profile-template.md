@@ -1,63 +1,63 @@
-# Project Config Profile Template
+# 项目配表档案 模板
 
-Use this template when a project has no existing AI-readable configuration map.
+项目没有现成的"AI 可读配表地图"时,用这个模板建一份。
 
 ```markdown
-# {Project} Config Profile
+# {项目名} 配表档案
 
-## Source
+## 数据源
 
-- Source of truth:
-- Access method:
-- Config root, export path, platform project ID, or table source:
-- Export/build pipeline:
-- Writeback policy:
+- 数据源真相:
+- 接入方式:
+- 配置根目录 / 导出路径 / 平台项目 ID / 表来源:
+- 导出 / 构建管线:
+- 覆盖策略:
 
-## Table Layout
+## 表布局
 
-- Workbook/file patterns:
-- Sheet naming rules:
-- Header row:
-- Data start row:
-- Comment/metadata rows:
-- Empty row behavior:
-- Formula/style conventions:
+- 工作簿 / 文件 命名规则:
+- Sheet 命名规则:
+- 表头从第几行:
+- 数据从第几行开始:
+- 注释 / 元信息行:
+- 空行行为:
+- 公式 / 样式 约定:
 
-## Key Rules
+## Key 规则
 
-- Primary key fields:
-- ID allocation method:
-- ID reuse policy:
-- Delete/deprecate policy:
-- Enum/dictionary source:
+- 主键字段:
+- ID 分配方式:
+- ID 复用策略:
+- 删除 / 弃用 策略:
+- 枚举 / 字典 来源:
 
-## Cross-Table References
+## 跨表引用
 
-| From | Field | To | Required | Notes |
+| 来源 | 字段 | 目标 | 必填 | 备注 |
 |---|---|---|---|---|
 |  |  |  |  |  |
 
-## Support Tables
+## 支撑表
 
-| Purpose | Table/Sheet | Key Fields | When Required |
+| 用途 | 表 / Sheet | 关键字段 | 什么时候需要 |
 |---|---|---|---|
-| Localization |  |  |  |
-| Prompt/Error text |  |  |  |
-| Resources/Icon/Audio/Effect |  |  |  |
-| Items/Rewards |  |  |  |
-| Conditions/Unlock |  |  |  |
-| Guide/Jump/Entry |  |  |  |
+| 本地化 |  |  |  |
+| 提示 / 错误文案 |  |  |  |
+| 资源 / 图标 / 音频 / 特效 |  |  |  |
+| 道具 / 奖励 |  |  |  |
+| 条件 / 解锁 |  |  |  |
+| 引导 / 跳转 / 入口 |  |  |  |
 
-## Validation Commands
+## 校验命令
 
 ```bash
 ```
 
-## Known Risks
+## 已知风险
 
 - 
 
-## Open Questions
+## 待定问题
 
 - 
 ```

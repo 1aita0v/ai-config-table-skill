@@ -1,19 +1,19 @@
-# Config Reference Playbook
+# 配表知识库 Playbook
 
-Use this when a project wants repeatable AI配表 instead of one-off table guessing.
+项目希望反复做"AI 配表"而不是每次从零猜表,用这套。
 
-## Core Idea
+## 核心思路
 
-Do not make AI read every workbook from scratch each time. Build a routed config reference layer:
+不要让 AI 每次从头扫所有工作簿。建一个带路由的"配表知识层":
 
-- A small index tells the agent what to read for each task.
-- Each module covers one mental model or system slice.
-- Source table data remains authoritative.
-- The reference explains how to navigate and validate the source, not replace it.
+- 一份很小的索引,告诉 agent 不同任务该读什么。
+- 每个模块对应一个心智模型 / 系统切片。
+- 源表仍然是权威。
+- 知识库 *告诉 agent 怎么导航 + 怎么验证* 源表,**不替代** 源表。
 
-This pattern keeps context small and makes AI behavior stable across projects.
+这种模式上下文小,跨项目 AI 行为稳定。
 
-## Recommended Structure
+## 推荐结构
 
 ```text
 config-reference/
@@ -28,123 +28,123 @@ config-reference/
 └── 07-appendix-known-gaps.md
 ```
 
-Use project-native names if preferred. Keep the same roles.
+可以用项目自己的命名,保持角色一致就行。
 
-## README Index
+## README 索引
 
-The README should answer:
+README 至少要回答:
 
-- What this reference is and what it is not.
-- Where the actual source tables live.
-- Which modules to read for common task types.
-- Which constraints are mandatory before edits.
-- Which docs or tables are authoritative when conflicts happen.
+- 这份知识库是什么、不是什么。
+- 源表在哪儿。
+- 常见任务该读哪些模块。
+- 改动前必须满足的硬约束。
+- 冲突时谁是权威。
 
-## Module Roles
+## 模块角色
 
-### 00 Overview
+### 00 概览
 
-Give the first mental model:
+给 agent 第一份心智模型:
 
-- Table ecosystem summary.
-- Main table/support table/settlement table/presentation table roles.
-- Directory or workbook-to-domain map.
-- Minimal first-read set.
+- 表生态总览。
+- 主表 / 支撑表 / 结算表 / 表现层表 的角色。
+- 目录或工作簿 → 业务域 的映射。
+- 最小首读集。
 
-### 01 Naming, ID, Terms
+### 01 命名、ID、术语
 
-Capture:
+记下:
 
-- ID formats and allocation rules.
-- Business terms and field aliases.
-- Localization key patterns.
-- Enum naming format.
+- ID 格式 + 分配规则。
+- 业务术语 + 字段别名。
+- 本地化 key 的命名模式。
+- 枚举命名格式。
 
-Never let agents infer business meaning only from ID ranges. Tell them which real fields decide category, profession, rarity, type, and quality.
+**永远不要让 agent 仅从 ID 区间推业务含义**。告诉它"哪个真实字段"决定 类别 / 职业 / 稀有度 / 类型 / 品质。
 
-### 02 Core Systems
+### 02 核心系统
 
-Split by project domain:
+按项目业务域拆:
 
-- Battle/combat.
-- Items/rewards.
-- Economy/commercialization.
-- Levels/dungeons.
-- Characters/equipment.
-- Events/live ops.
+- 战斗 / 对战。
+- 道具 / 奖励。
+- 经济 / 商业化。
+- 关卡 / 副本。
+- 角色 / 装备。
+- 活动 / 运营。
 
-Each system module should list main tables, key fields, sample rows, and typical dependency tables.
+每个系统模块列出:主表、关键字段、样本行、典型依赖表。
 
-### 03 Support Tables
+### 03 支撑表
 
-Document tables that are not main systems but often decide whether work actually lands:
+列那些不是主系统、但经常决定改动能不能真正落地的表:
 
-- Localization and prompt text.
-- Conditions/unlocks.
-- System entry, guide, jump.
-- Resources, icons, audio, effects, windows.
-- Items, rewards, shops, bags.
-- Events/triggers.
+- 本地化 + 提示文案。
+- 条件 / 解锁。
+- 系统入口、引导、跳转。
+- 资源、图标、音频、特效、窗口。
+- 道具、奖励、商店、背包。
+- 事件 / 触发器。
 
-### 04 Field Index
+### 04 字段索引
 
-Create a quick field lookup for high-frequency tables:
+给高频表做一个快速字段查询表:
 
-| Table | Field | Meaning | References | Notes |
+| 表 | 字段 | 含义 | 引用 | 备注 |
 |---|---|---|---|---|
 |  |  |  |  |  |
 
-This is the fastest entry for "what does this field mean?" questions.
+回答"这个字段啥意思?"的最快入口。
 
-### 05 Cross-Table Constraints
+### 05 跨表约束
 
-List reference paths and hard constraints:
+列引用路径和硬约束:
 
-- Main table field -> dependency table key.
-- Localization key -> sheet/key rule.
-- Resource ID -> resource table.
-- Reward ID -> item/reward table.
-- Condition ID -> condition tree.
-- Formula columns.
-- High-risk primary/foreign keys.
+- 主表字段 → 依赖表 key。
+- 本地化 key → sheet / key 规则。
+- 资源 ID → 资源表。
+- 奖励 ID → 道具 / 奖励表。
+- 条件 ID → 条件树。
+- 公式列。
+- 高风险的主外键。
 
-Also list common missing dependencies grouped by text, access, settlement, and presentation.
+也列出常见缺失依赖,按 文案 / 准入 / 结算 / 表现层 分组。
 
-### 06 Workflow Advice
+### 06 工作流建议
 
-Record project-specific habits that prevent bad AI配表:
+记下项目特有的、避免坏配表的习惯:
 
-- Before saying "not found", search all sheet headers.
-- For category decisions, query business fields, not ID ranges.
-- For player-facing text, check localization; for internal categories, check Desc/Type/Category.
-- Before configuring a new type, blindly recreate 3-5 existing examples and diff against truth.
-- For formula columns, use deterministic scripts and note recalculation needs.
-- For cross-version backfill, compare schema fields before copying rows.
+- 说"找不到"之前,先搜所有 sheet 表头。
+- 类别归属查业务字段,不查 ID 区间。
+- 面向玩家的文案查本地化;内部分类查 Desc / Type / Category。
+- 配新类型之前,先盲建 3-5 条已有的真实样本,和真值 diff。
+- 公式列用确定性脚本,记下重算依赖。
+- 跨版本回填,先比 schema 字段再拷数据。
 
-### 07 Appendix And Gaps
+### 07 附录和已知 gap
 
-Keep:
+留:
 
-- Representative examples.
-- Enum dumps.
-- Known blank rules.
-- Questions requiring product/engineering decisions.
+- 代表性样本。
+- 枚举 dump。
+- 已知空白规则。
+- 需要产品 / 工程拍板的问题。
 
-## Maintenance Rules
+## 维护规则
 
-- The source tables are authoritative; the reference is a reading map.
-- If a system-specific source doc exists, update it first, then update the AI-facing reference.
-- Keep modules stable; prompt templates may link to them.
-- Do not hide uncertainty. Mark "unknown" or "needs decision" with evidence.
-- Include 3-5 real row examples for fragile rules.
+- 源表是权威,知识库是阅读地图。
+- 系统级源文档如果存在,先更新它,再更新 AI 面向的知识库。
+- 模块保持稳定;prompt 模板可能链到这些模块名。
+- 不藏不确定。"unknown" / "needs decision" 都要带证据。
+- 脆弱规则配 3-5 条真实样本。
 
-## Minimum Viable Reference
+## 最小可用版本
 
-If time is short, create only:
+时间紧,只建这四个:
 
-1. `README.md`: source, routing, hard constraints.
-2. `00-overview.md`: table roles and first-read set.
-3. `04-field-index.md`: high-frequency table fields.
-4. `05-cross-table-constraints.md`: dependencies and write rules.
+1. `README.md`:数据源、路由、硬约束。
+2. `00-overview.md`:表角色 + 最小首读集。
+3. `04-field-index.md`:高频表字段。
+4. `05-cross-table-constraints.md`:依赖关系 + 写入规则。
 
-That is enough to make AI配表 much safer than raw table scanning.
+足够让 AI 配表比直接裸扫表安全得多。
