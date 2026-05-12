@@ -8,10 +8,15 @@ Always run with --dry-run first to preview cell-level changes before writing.
 
 The source workbook is never modified. Output is written to --output. If patching
 fails partway through, the partial output file is removed.
+
+When --output already exists, by default a timestamped sibling is written
+(e.g. `table_candidate_20260512_103045.xlsx`) so iterative debugging never
+loses an existing candidate. Pass --force to overwrite, or --strict to error.
 """
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import re
 import shutil
@@ -93,6 +98,10 @@ def header_map(ws, field_row: int) -> dict[str, int]:
     return result
 
 
+def reverse_header_map(header: dict[str, int]) -> dict[int, str]:
+    return {col: name for name, col in header.items()}
+
+
 def build_key_index(ws, key_col: int, data_start: int) -> dict[str, int]:
     index: dict[str, int] = {}
     for row_idx in range(data_start, ws.max_row + 1):
@@ -128,6 +137,7 @@ def collect_planned_changes(ws, sheet_patch: dict[str, Any]) -> dict[str, Any]:
     """Compute (but do not apply) the changes a patch would make. Used by --dry-run."""
     field_row, meta_rows, data_start = resolve_sheet_layout(sheet_patch, ws)
     header = header_map(ws, field_row)
+    col_to_name = reverse_header_map(header)
     key_field = sheet_patch.get("key_field")
     key_col = header.get(key_field) if key_field else None
     key_index = build_key_index(ws, key_col, data_start) if key_col else {}
@@ -151,7 +161,15 @@ def collect_planned_changes(ws, sheet_patch: dict[str, Any]) -> dict[str, Any]:
                 raise SystemExit(f"Field not found in {ws.title}: {field}")
             col = header[field]
         before = norm(ws.cell(row=row, column=col).value)
-        planned_updates.append({"row": row, "col": col, "before": before, "after": norm(update.get("value"))})
+        planned_updates.append(
+            {
+                "row": row,
+                "col": col,
+                "field": col_to_name.get(col, ""),
+                "before": before,
+                "after": norm(update.get("value")),
+            }
+        )
 
     planned_appends: list[dict[str, Any]] = []
     append_start = last_meaningful_row(ws, data_start) + 1
@@ -165,7 +183,7 @@ def collect_planned_changes(ws, sheet_patch: dict[str, Any]) -> dict[str, Any]:
                 col = resolve_col(field)
             else:
                 raise SystemExit(f"Append field not found in {ws.title}: {field}")
-            cells.append({"col": col, "value": norm(value)})
+            cells.append({"col": col, "field": col_to_name.get(col, str(field)), "value": norm(value)})
         planned_appends.append({"row": row_idx, "cells": cells})
 
     return {
@@ -223,6 +241,12 @@ def apply_sheet_patch(ws, sheet_patch: dict[str, Any], should_mark: bool) -> dic
     return {"changed_cells": changed, "appended_rows": appended}
 
 
+def format_col(col: int, field: str | None) -> str:
+    if field:
+        return f"{col}({field})"
+    return str(col)
+
+
 def render_dry_run(plans: list[dict[str, Any]]) -> str:
     lines = ["# Patch Dry Run", ""]
     total_updates = total_appends = 0
@@ -236,13 +260,16 @@ def render_dry_run(plans: list[dict[str, Any]]) -> str:
             lines.append("  Updates:")
             for u in plan["updates"]:
                 before = u["before"] if u["before"] else "(empty)"
-                lines.append(f"    row={u['row']} col={u['col']}: {before}  =>  {u['after']}")
+                col_label = format_col(u["col"], u.get("field"))
+                lines.append(f"    row={u['row']} col={col_label}: {before}  =>  {u['after']}")
                 total_updates += 1
             lines.append("")
         if plan["appends"]:
             lines.append("  Appends:")
             for a in plan["appends"]:
-                preview = ", ".join(f"col{c['col']}={c['value']}" for c in a["cells"][:8])
+                preview = ", ".join(
+                    f"{c.get('field') or 'col' + str(c['col'])}={c['value']}" for c in a["cells"][:8]
+                )
                 lines.append(f"    row={a['row']}: {preview}")
                 total_appends += 1
             lines.append("")
@@ -254,12 +281,22 @@ def render_dry_run(plans: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def auto_suffix_path(path: Path) -> Path:
+    stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    return path.with_name(f"{path.stem}_{stamp}{path.suffix}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Copy and patch an Excel workbook.")
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--patch", type=Path, required=True, help="Patch JSON path.")
-    parser.add_argument("--force", action="store_true", help="Overwrite existing output.")
+    parser.add_argument("--force", action="store_true", help="Overwrite existing output without renaming.")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Error out if --output already exists (legacy behavior).",
+    )
     parser.add_argument("--no-mark", action="store_true", help="Do not mark edited cells yellow.")
     parser.add_argument(
         "--dry-run",
@@ -286,13 +323,24 @@ def main() -> None:
         sys.stdout.write(render_dry_run(plans) + "\n")
         return
 
-    if args.output.exists() and not args.force:
-        raise SystemExit(f"Output already exists: {args.output}. Use --force to overwrite.")
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(args.source, args.output)
+    output_path = args.output
+    output_existed_warning: str | None = None
+    if output_path.exists():
+        if args.strict:
+            raise SystemExit(f"Output already exists: {output_path}. (--strict was passed.)")
+        if not args.force:
+            new_path = auto_suffix_path(output_path)
+            output_existed_warning = (
+                f"Output existed; writing to {new_path.name} instead. "
+                f"Use --force to overwrite the existing file."
+            )
+            output_path = new_path
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(args.source, output_path)
 
     try:
-        wb = load_workbook(args.output, keep_vba=args.output.suffix.lower() == ".xlsm")
+        wb = load_workbook(output_path, keep_vba=output_path.suffix.lower() == ".xlsm")
         summary = []
         for sheet_patch in patch.get("sheets", []):
             sheet_name = sheet_patch["sheet"]
@@ -301,16 +349,20 @@ def main() -> None:
             result = apply_sheet_patch(wb[sheet_name], sheet_patch, not args.no_mark)
             result["sheet"] = sheet_name
             summary.append(result)
-        wb.save(args.output)
+        wb.save(output_path)
     except BaseException:
         # Remove partially-written output so the user does not trust a broken file.
         try:
-            args.output.unlink(missing_ok=True)
+            output_path.unlink(missing_ok=True)
         except Exception:
             pass
         raise
 
-    sys.stdout.write(json.dumps({"output": str(args.output), "sheets": summary}, ensure_ascii=False, indent=2))
+    report = {"output": str(output_path), "sheets": summary}
+    if output_existed_warning:
+        report["warning"] = output_existed_warning
+        sys.stderr.write(f"[notice] {output_existed_warning}\n")
+    sys.stdout.write(json.dumps(report, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

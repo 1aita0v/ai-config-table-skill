@@ -139,6 +139,17 @@ rm examples/sample_candidate.xlsx examples/inventory.md examples/diff.md
 
 (生成的 `examples/sample.xlsx` 可以保留,下次还能用。)
 
+## 5b. 跨表引用对账(可选,但建议)
+
+```bash
+python3 scripts/validate_refs.py \
+  --workbook examples/sample_candidate.xlsx \
+  --field-row 2 \
+  --meta-rows 1
+```
+
+会自动检测 `Item.LocKey → LocText.LocKey` 这种引用,跑出来如果有 orphan(候选里加了 Item 没加 LocText),会列出哪一行的哪个 LocKey 找不到对应。**这就是 agent 视角下"最值钱的兜底"**。
+
 ## 实际项目里也是同样的三条命令
 
 ```bash
@@ -146,7 +157,8 @@ python3 scripts/inspect_config_tables.py --root /your/config --field-row N --met
 python3 scripts/patch_xlsx.py --source your.xlsx --output your_candidate.xlsx --patch your-patch.json --dry-run
 python3 scripts/patch_xlsx.py --source your.xlsx --output your_candidate.xlsx --patch your-patch.json
 python3 scripts/diff_config_tables.py --source your.xlsx --candidate your_candidate.xlsx --output diff.md
+python3 scripts/validate_refs.py --workbook your_candidate.xlsx --field-row N --meta-rows R,R,R
 ```
 
 patch JSON 格式见 `references/patch-format.md`。
-校验清单(含 openpyxl 重存注意事项)见 `references/validation-checklist.md`。
+校验清单见 `references/validation-checklist.md`。
