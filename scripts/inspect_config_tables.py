@@ -23,6 +23,7 @@ import argparse
 import csv
 import io
 import json
+import platform
 import re
 import sys
 from pathlib import Path
@@ -56,10 +57,21 @@ def load_openpyxl():
     except ModuleNotFoundError as exc:
         raise SystemExit(
             "openpyxl is required for Excel files.\n"
-            "Install with:  pip install openpyxl\n"
+            "Install with:  pip install openpyxl  (or pip install -r requirements.txt)\n"
             "Or restrict --root to CSV/TSV/JSON files only."
         ) from exc
     return load_workbook
+
+
+def tool_versions(include_openpyxl: bool = False) -> dict[str, str]:
+    versions: dict[str, str] = {"python": platform.python_version()}
+    if include_openpyxl:
+        try:
+            import openpyxl  # type: ignore
+            versions["openpyxl"] = openpyxl.__version__
+        except ModuleNotFoundError:
+            pass
+    return versions
 
 
 def norm(value: Any) -> str:
@@ -438,13 +450,17 @@ def inspect_file(path: Path, args: argparse.Namespace) -> dict[str, Any] | None:
 
 
 def render_md(inventory: dict[str, Any]) -> str:
+    versions = inventory.get("tool_versions") or {}
+    versions_label = ", ".join(f"{k} {v}" for k, v in versions.items())
     lines = [
         "# Config Inventory",
         "",
         f"- Root: `{inventory['root']}`",
         f"- Files: {len(inventory['files'])}",
-        "",
     ]
+    if versions_label:
+        lines.append(f"- Tool versions: {versions_label}")
+    lines.append("")
     for file_info in inventory["files"]:
         lines.append(f"## {file_info['path']}")
         lines.append("")
@@ -604,7 +620,12 @@ def main() -> None:
             files.append(result)
         except Exception as exc:
             files.append({"type": path.suffix.lower().lstrip("."), "path": str(path), "error": str(exc), "sheets": []})
-    inventory = {"root": str(args.root), "files": files}
+    needs_openpyxl = any(f.get("type") in {"xlsx", "xlsm"} for f in files)
+    inventory = {
+        "root": str(args.root),
+        "tool_versions": tool_versions(include_openpyxl=needs_openpyxl),
+        "files": files,
+    }
     text = json.dumps(inventory, ensure_ascii=False, indent=2) if args.format == "json" else render_md(inventory)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -15,11 +15,13 @@ python3 examples/build_sample.py
 
 这会生成 `examples/sample.xlsx`,3 张 sheet:
 
-| Sheet | 表头行数 | 数据行数 |
-|---|---|---|
-| Item | 4(中文 / 英文 / 类型 / 注释) | 5 |
-| LocText | 2(中文 / 英文字段) | 5 |
-| Reward | 1 | 3 |
+| Sheet | 表头行数 | 数据行数 | 列数 |
+|---|---|---|---|
+| Item | 4(中文 / 英文 / 类型 / 注释) | 5 | 7(含「备注」列) |
+| LocText | 2(中文 / 英文字段) | 5 | 3 |
+| Reward | 1 | 3 | 3 |
+
+`Item.备注` 是 row-level 注释列 —— patch_xlsx 会自动识别名为 `备注` / `Note` / `Comment` 等的列。给 update 加 `note` 字段,改动原因就会自动写到这一行的备注列里。
 
 ## 1. Inspect(同时生成 patch JSON 骨架)
 
@@ -71,24 +73,29 @@ python3 scripts/patch_xlsx.py \
 # Patch Dry Run
 
 ## Sheet: Item
-  field_row=2 meta_rows=[1, 3, 4] data_start_row=5
+  field_row=2 meta_rows=[1, 3, 4] data_start_row=5 note_column=备注
 
   Updates:
-    row=5 col=2: Sword  =>  Long Sword
-    row=7 col=5: 2  =>  3
+    row=5 col=2(Name): Sword  =>  Long Sword
+    row=7 col=5(Quality): 2  =>  3
+
+  Notes:
+    row=5 col=7(备注): (empty)  =>  改名 Sword -> Long Sword (用户请求)
+    row=7 col=7(备注): (empty)  =>  品质 2 -> 3
 
   Appends:
-    row=10: col1=10006, col2=Dagger, col3=Small fast weapon., ...
+    row=10: ItemID=10006, Name=Dagger, Desc=Small fast weapon., ...
 
 ## Sheet: LocText
-  field_row=2 meta_rows=[1] data_start_row=3
-
+  ...
   Appends:
-    row=8: col1=ITEM_10006_NAME, col2=匕首, col3=Dagger
+    row=8: LocKey=ITEM_10006_NAME, TextCN=匕首, TextEN=Dagger
 
-Total: 2 update(s), 2 append row(s) across 2 sheet(s).
+Total: 2 update(s), 2 note write(s), 2 append row(s) across 2 sheet(s).
 Dry run only — source workbook was not modified, no output file written.
 ```
+
+注意两条 update 都带了 `note`,所以多出来一段 **Notes:** 把改动原因写到备注列。如果你不想写备注,patch JSON 里不加 `note` 字段就行(整个 Notes 段消失)。
 
 如果有任何不对的地方(行号错、字段名错、值打错),**立刻** 改 patch JSON,不要继续生成。
 
@@ -126,7 +133,7 @@ python3 scripts/diff_config_tables.py \
 
 打开 `examples/diff.md`,预期:
 
-- Item:8 个改动格(2 次 update × 1 格 + 1 次 append × 6 格)
+- Item:多个改动格 = 2 次 update × 1 格 + 2 次 note 写入 + 1 次 append(7 列)
 - LocText:3 个改动格(1 次 append × 3 格)
 - Reward:0 改动
 - 没有公式改动

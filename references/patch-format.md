@@ -42,10 +42,29 @@
 - `meta_rows` —— 1-based 列表,标记额外表头行(中文显示名、类型注释、注释)。patch 脚本不会写入这些行,仅供清单记录。
 - `data_start_row` —— 可选,数据起始行。不填则默认为 `field_row` / `meta_rows` 最后一行的下一行。
 - `key_field` —— `updates` 中按 `key` 定位用的字段名。
-- `updates` —— 单元格更新列表,支持按坐标或按 key 定位。
+- `updates` —— 单元格更新列表,支持按坐标或按 key 定位。每个 update 可选 `note` 字段(见下)。
 - `appends` —— 追加新行,按字段名或列字母指定。
 
 `field_row` 和 `meta_rows` 全部省略时,脚本会猜单行表头(等同 V2 行为)。
+
+## 自动 `note`(备注列)
+
+如果 sheet 的某一列叫 `备注` / `注释` / `Note` / `Notes` / `Comment` / `Comments` / `Remark` / `Remarks`(大小写不敏感),patch_xlsx **会把它识别为 row-level 注释列**。给 update 加一个 `note` 字段,patch 会把这段文本写到这一行的备注列里:
+
+```json
+{
+  "key": "10003",
+  "field": "Quality",
+  "value": 3,
+  "note": "品质 2 -> 3, 因为新版本平衡调整 (用户 X 2026-05-12)"
+}
+```
+
+如果 sheet 没有备注列,`note` 字段被忽略。
+
+**对 appends 想填备注?** 直接在追加的 row 字典里写 `"备注": "..."` 即可(就当普通字段填)。
+
+**推荐(给 AI)**:每个 update 都带 `note`,即使一句话。这样每次改动在表里直接可见,成为审计痕迹。
 
 ## 多行表头样例
 
@@ -105,7 +124,9 @@ python3 scripts/patch_xlsx.py --source a.xlsx --output a_candidate.xlsx --patch 
 ## 安全保护
 
 - 编辑前会先把源工作簿复制到 `--output`。
-- 已有的输出文件不会被覆盖,除非加 `--force`。
-- 被改的单元格默认标黄,加 `--no-mark` 跳过。
+- `--output` 和 `--source` 是同一路径时,脚本直接报错,提示候选名(脚本绝不在原表上原地编辑)。
+- 已有的输出文件不会被覆盖:默认自动加时间戳(`xxx_20260512_103045.xlsx`);加 `--force` 才覆盖;加 `--strict` 直接报错。
+- 被改的单元格默认标黄(包括 note 写入的备注格),加 `--no-mark` 跳过。
 - `.xlsm` 会保留 VBA。
 - patch 过程中报错时,半成品候选文件会被自动删掉 —— 防止你误信坏文件。
+- 如果 `--output` 所在目录无写权限(沙盒限制),自动回退写到 `~/Downloads/<同名>`,在 stdout JSON 和 stderr 都打提示。

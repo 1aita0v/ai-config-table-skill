@@ -7,11 +7,11 @@
       "data_start_row": 5,
       "key_field": "ItemID",
       "updates": [
-        {"key": "10001", "field": "Name", "value": "Long Sword"},
-        {"key": "10003", "field": "Quality", "value": 3}
+        {"key": "10001", "field": "Name", "value": "Long Sword", "note": "改名 Sword -> Long Sword (用户请求)"},
+        {"key": "10003", "field": "Quality", "value": 3, "note": "品质 2 -> 3"}
       ],
       "appends": [
-        {"ItemID": 10006, "Name": "Dagger", "Desc": "Small fast weapon.", "Icon": "icon_dagger", "Quality": 1, "LocKey": "ITEM_10006_NAME"}
+        {"ItemID": 10006, "Name": "Dagger", "Desc": "Small fast weapon.", "Icon": "icon_dagger", "Quality": 1, "LocKey": "ITEM_10006_NAME", "备注": "新增 by AI"}
       ]
     },
     {

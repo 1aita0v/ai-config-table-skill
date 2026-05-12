@@ -1,0 +1,8 @@
+# Pinned dependency versions so a teammate filing an issue can be reproduced.
+# Install with:  pip install -r requirements.txt
+#
+# openpyxl handles .xlsx / .xlsm reading + writing. Different minor versions
+# can differ in how they preserve data validation, conditional formatting,
+# and embedded charts — pinning to >=3.1,<4.0 keeps everyone on the same
+# major branch.
+openpyxl>=3.1,<4.0

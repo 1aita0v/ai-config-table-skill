@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import platform
 import re
 import shutil
 import sys
@@ -41,6 +42,33 @@ def load_openpyxl():
 load_workbook, Font, PatternFill, column_index_from_string, get_column_letter = load_openpyxl()
 MARK_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 COL_RE = re.compile(r"^[A-Z]{1,3}$")
+
+# Header names treated as the row-level note / comment column. First match wins.
+NOTE_COLUMN_NAMES = ("备注", "注释", "Note", "Notes", "Comment", "Comments", "Remark", "Remarks")
+
+
+def tool_versions() -> dict[str, str]:
+    versions: dict[str, str] = {"python": platform.python_version()}
+    try:
+        import openpyxl  # type: ignore
+        versions["openpyxl"] = openpyxl.__version__
+    except ModuleNotFoundError:
+        pass
+    return versions
+
+
+def detect_note_column(header: dict[str, int]) -> tuple[str | None, int | None]:
+    """Return (header_name, col_index) of the first note-like column, or (None, None)."""
+    for name in NOTE_COLUMN_NAMES:
+        if name in header:
+            return name, header[name]
+    # Case-insensitive fallback for English names.
+    lower_map = {k.lower(): k for k in header.keys()}
+    for name in NOTE_COLUMN_NAMES:
+        if name.lower() in lower_map:
+            real = lower_map[name.lower()]
+            return real, header[real]
+    return None, None
 
 
 def norm(value: Any) -> str:
@@ -141,8 +169,10 @@ def collect_planned_changes(ws, sheet_patch: dict[str, Any]) -> dict[str, Any]:
     key_field = sheet_patch.get("key_field")
     key_col = header.get(key_field) if key_field else None
     key_index = build_key_index(ws, key_col, data_start) if key_col else {}
+    note_field, note_col = detect_note_column(header)
 
     planned_updates: list[dict[str, Any]] = []
+    planned_note_writes: list[dict[str, Any]] = []
     for update in sheet_patch.get("updates", []):
         if "row" in update and "col" in update:
             row = int(update["row"])
@@ -170,6 +200,18 @@ def collect_planned_changes(ws, sheet_patch: dict[str, Any]) -> dict[str, Any]:
                 "after": norm(update.get("value")),
             }
         )
+        note = update.get("note")
+        if note and note_col is not None:
+            before_note = norm(ws.cell(row=row, column=note_col).value)
+            planned_note_writes.append(
+                {
+                    "row": row,
+                    "col": note_col,
+                    "field": note_field,
+                    "before": before_note,
+                    "after": norm(note),
+                }
+            )
 
     planned_appends: list[dict[str, Any]] = []
     append_start = last_meaningful_row(ws, data_start) + 1
@@ -191,7 +233,9 @@ def collect_planned_changes(ws, sheet_patch: dict[str, Any]) -> dict[str, Any]:
         "field_row": field_row,
         "meta_rows": meta_rows,
         "data_start_row": data_start,
+        "note_column": note_field,
         "updates": planned_updates,
+        "note_writes": planned_note_writes,
         "appends": planned_appends,
     }
 
@@ -202,8 +246,10 @@ def apply_sheet_patch(ws, sheet_patch: dict[str, Any], should_mark: bool) -> dic
     key_field = sheet_patch.get("key_field")
     key_col = header.get(key_field) if key_field else None
     key_index = build_key_index(ws, key_col, data_start) if key_col else {}
+    _note_field, note_col = detect_note_column(header)
 
     changed = 0
+    note_writes = 0
     appended = 0
 
     for update in sheet_patch.get("updates", []):
@@ -220,6 +266,13 @@ def apply_sheet_patch(ws, sheet_patch: dict[str, Any], should_mark: bool) -> dic
         if should_mark:
             mark(cell)
         changed += 1
+        note = update.get("note")
+        if note and note_col is not None:
+            note_cell = ws.cell(row=row, column=note_col)
+            note_cell.value = note
+            if should_mark:
+                mark(note_cell)
+            note_writes += 1
 
     append_start = last_meaningful_row(ws, data_start) + 1
     for row_offset, row_data in enumerate(sheet_patch.get("appends", [])):
@@ -238,7 +291,7 @@ def apply_sheet_patch(ws, sheet_patch: dict[str, Any], should_mark: bool) -> dic
             changed += 1
         appended += 1
 
-    return {"changed_cells": changed, "appended_rows": appended}
+    return {"changed_cells": changed, "appended_rows": appended, "note_writes": note_writes}
 
 
 def format_col(col: int, field: str | None) -> str:
@@ -249,12 +302,16 @@ def format_col(col: int, field: str | None) -> str:
 
 def render_dry_run(plans: list[dict[str, Any]]) -> str:
     lines = ["# Patch Dry Run", ""]
-    total_updates = total_appends = 0
+    total_updates = total_appends = total_notes = 0
     for plan in plans:
         lines.append(f"## Sheet: {plan['sheet']}")
-        lines.append(
-            f"  field_row={plan['field_row']} meta_rows={plan['meta_rows'] or '[]'} data_start_row={plan['data_start_row']}"
+        layout = (
+            f"  field_row={plan['field_row']} meta_rows={plan['meta_rows'] or '[]'} "
+            f"data_start_row={plan['data_start_row']}"
         )
+        if plan.get("note_column"):
+            layout += f" note_column={plan['note_column']}"
+        lines.append(layout)
         lines.append("")
         if plan["updates"]:
             lines.append("  Updates:")
@@ -263,6 +320,14 @@ def render_dry_run(plans: list[dict[str, Any]]) -> str:
                 col_label = format_col(u["col"], u.get("field"))
                 lines.append(f"    row={u['row']} col={col_label}: {before}  =>  {u['after']}")
                 total_updates += 1
+            lines.append("")
+        if plan.get("note_writes"):
+            lines.append("  Notes:")
+            for n in plan["note_writes"]:
+                before = n["before"] if n["before"] else "(empty)"
+                col_label = format_col(n["col"], n.get("field"))
+                lines.append(f"    row={n['row']} col={col_label}: {before}  =>  {n['after']}")
+                total_notes += 1
             lines.append("")
         if plan["appends"]:
             lines.append("  Appends:")
@@ -273,12 +338,40 @@ def render_dry_run(plans: list[dict[str, Any]]) -> str:
                 lines.append(f"    row={a['row']}: {preview}")
                 total_appends += 1
             lines.append("")
-        if not plan["updates"] and not plan["appends"]:
+        if not plan["updates"] and not plan["appends"] and not plan.get("note_writes"):
             lines.append("  (no changes)")
             lines.append("")
-    lines.append(f"Total: {total_updates} update(s), {total_appends} append row(s) across {len(plans)} sheet(s).")
+    lines.append(
+        f"Total: {total_updates} update(s), {total_notes} note write(s), "
+        f"{total_appends} append row(s) across {len(plans)} sheet(s)."
+    )
     lines.append("Dry run only — source workbook was not modified, no output file written.")
     return "\n".join(lines)
+
+
+def write_with_fallback(source: Path, output: Path) -> tuple[Path, str | None]:
+    """Copy source to output. If write fails, fall back to ~/Downloads.
+
+    Returns (actual_path_written, optional_warning_message).
+    """
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, output)
+        return output, None
+    except PermissionError as exc:
+        fallback_dir = Path.home() / "Downloads"
+        try:
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            fallback = fallback_dir / output.name
+            shutil.copy2(source, fallback)
+            return (
+                fallback,
+                f"Could not write to {output} ({exc}). Wrote candidate to {fallback} instead.",
+            )
+        except Exception as fallback_exc:
+            raise SystemExit(
+                f"Could not write to {output} ({exc}) and fallback to {fallback_dir} also failed: {fallback_exc}"
+            ) from fallback_exc
 
 
 def auto_suffix_path(path: Path) -> Path:
@@ -330,20 +423,21 @@ def main() -> None:
         return
 
     output_path = args.output
-    output_existed_warning: str | None = None
+    warnings: list[str] = []
     if output_path.exists():
         if args.strict:
             raise SystemExit(f"Output already exists: {output_path}. (--strict was passed.)")
         if not args.force:
             new_path = auto_suffix_path(output_path)
-            output_existed_warning = (
+            warnings.append(
                 f"Output existed; writing to {new_path.name} instead. "
                 f"Use --force to overwrite the existing file."
             )
             output_path = new_path
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(args.source, output_path)
+    output_path, fallback_warning = write_with_fallback(args.source, output_path)
+    if fallback_warning:
+        warnings.append(fallback_warning)
 
     try:
         wb = load_workbook(output_path, keep_vba=output_path.suffix.lower() == ".xlsm")
@@ -364,10 +458,15 @@ def main() -> None:
             pass
         raise
 
-    report = {"output": str(output_path), "sheets": summary}
-    if output_existed_warning:
-        report["warning"] = output_existed_warning
-        sys.stderr.write(f"[notice] {output_existed_warning}\n")
+    report: dict[str, Any] = {
+        "output": str(output_path),
+        "tool_versions": tool_versions(),
+        "sheets": summary,
+    }
+    if warnings:
+        report["warnings"] = warnings
+        for w in warnings:
+            sys.stderr.write(f"[notice] {w}\n")
     sys.stdout.write(json.dumps(report, ensure_ascii=False, indent=2))
 
 

@@ -254,6 +254,18 @@ python3 scripts/patch_xlsx.py --source table.xlsx --output table_candidate.xlsx 
 
 如果 `--output` 已存在,默认会自动加时间戳(`table_candidate_20260512_103045.xlsx`),不会报错。要强制覆盖加 `--force`,要严格报错加 `--strict`。
 
+如果 `--output` 所在目录写不进去(沙盒限制),脚本会**自动 fallback 写到 `~/Downloads/<同名>`**,并在 stderr + 输出 JSON 里告诉你实际路径。把这个路径告诉用户即可。
+
+### `note` 字段(备注列)
+
+每个 update **可以加 `note`**(一句话说明改动原因)。如果表里有列叫 `备注` / `Note` / `Comment` 之类,patch_xlsx 会把这段文本写到这一行的备注列里 —— 直接形成审计痕迹。
+
+```json
+{"key": "10003", "field": "Quality", "value": 3, "note": "品质 2 -> 3, 平衡性调整"}
+```
+
+**推荐**:每个改动都顺手填一句 `note`。表里看就知道这格谁改的、为什么。Appends 想填备注直接在 row 字典里写 `"备注": "..."`。
+
 ### 6. 校验
 
 ```bash
@@ -310,7 +322,7 @@ patch JSON 格式参考:[`references/patch-format.md`](references/patch-format.m
 - **Claude Code(项目级)**: `git clone https://github.com/1aita0v/ai-config-table-skill.git .claude/skills/ai-config-table`
 - **Cursor / Aider / 其他**: 文件夹丢到 agent 看得见的地方,在 `.cursorrules` / `AGENTS.md` / `CLAUDE.md` 加一行指向 `ai-config-table-skill/SKILL.md`。
 
-依赖:Python 3.8+。`.xlsx` / `.xlsm` 还需要 `openpyxl`(`pip install openpyxl`)。CSV / TSV / JSON 用标准库。
+依赖:Python 3.8+。`.xlsx` / `.xlsm` 还需要 `openpyxl`。建议 `pip install -r requirements.txt`(把版本钉在测过的范围),急用直接 `pip install openpyxl` 也行。CSV / TSV / JSON 用标准库。inspect 和 patch 的 JSON 输出都带 `tool_versions` 字段,issue 复现更可靠。
 
 ## 文件结构
 
