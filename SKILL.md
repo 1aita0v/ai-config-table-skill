@@ -1,14 +1,13 @@
 ---
 name: ai-config-table
 description: >-
-  Portable AI workflow for editing any project's configuration tables safely.
-  Use whenever a user asks to inspect, document, change, generate, patch,
-  validate, or review config data — local Excel/CSV/TSV/JSON files, exported
-  workbooks, cloud sheets, or platform table APIs. Triggers include "AI配表",
-  "读配置表", "改配置表", "加一行/新增一条", "批量改", "配表复核",
-  "配表知识库", "跨表引用校验", "use this project's config tables". Works under
-  Claude Code, Codex, Cursor, or any agent that can run Python 3.8+ and read
-  this directory.
+  Portable AI workflow for safely editing project configuration tables — Excel,
+  CSV, TSV, JSON, exported workbooks, cloud sheets, or platform table APIs.
+  Activate when the user asks to inspect, document, change, patch, add rows,
+  batch-edit, validate, or review config data. Also triggers on Chinese
+  phrasing: 改配置表, AI 配表, 加一行, 批量改, 配表复核, 跨表引用校验.
+  Works under Claude Code, Codex, Cursor, or any agent that can run
+  Python 3.8+ and read this directory.
 ---
 
 # AI 配表 (AI Config Table)

@@ -1,7 +1,7 @@
 interface:
-  display_name: "AI 配表 / Config Table"
+  display_name: "AI Config Table"
   short_description: "Safely edit Excel/CSV/JSON config tables — never overwrites the source until the user approves"
-  default_prompt: "Use $ai-config-table to inspect this project's configuration tables and produce a safe candidate. Match the user's language (Chinese / English / other) when replying."
+  default_prompt: "Use $ai-config-table to inspect this project's configuration tables and produce a safe candidate. Match the user's language (English / Chinese / other) when replying."
 
 policy:
   allow_implicit_invocation: true
