@@ -1,0 +1,26 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.venv/
+venv/
+
+# Agent / user-generated artifacts that live next to the skill but shouldn't be tracked
+*.bak.*
+*_candidate.xlsx
+*_candidate.csv
+inventory.json
+inventory.md
+diff.md
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo

@@ -1,0 +1,7 @@
+interface:
+  display_name: "AI Config Table"
+  short_description: "Reusable AI workflow for project config tables"
+  default_prompt: "Use $ai-config-table to inspect this project's configuration tables and produce a safe AI config plan."
+
+policy:
+  allow_implicit_invocation: true
