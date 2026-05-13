@@ -1,88 +1,115 @@
 # ai-config-table-skill
 
-> 🌍 中文: [README.md](README.md)
+[![License: MIT](https://img.shields.io/github/license/1aita0v/ai-config-table-skill)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
+[![Latest tag](https://img.shields.io/github/v/tag/1aita0v/ai-config-table-skill?label=release)](https://github.com/1aita0v/ai-config-table-skill/tags)
 
-A portable AI skill that lets your assistant (Claude Code, Codex, Cursor) safely edit your **configuration tables** — Excel / CSV / TSV / JSON — without touching the original file until you say so.
+A portable skill that lets AI agents (Claude Code, Codex, Cursor, …) **safely edit Excel / CSV / TSV / JSON configuration tables**: the original file is never modified before the user explicitly confirms a candidate copy and its diff.
 
-No MCP, no plugins, no SaaS. Just a folder of Markdown + Python.
+No MCP, no plugins, no SaaS — just Markdown plus a handful of Python scripts.
 
----
-
-## 👤 For designers / PMs: read this one section
-
-**After install**, talk to your AI in plain language, e.g.:
-
-> Change item 10001's quality to 3 in `~/myproj/cfg/Item.xlsx`
-
-The AI will: **scan → preview → make a candidate copy (original untouched) → show a diff**. You say "overwrite" only after you're happy.
-
-**You don't need to touch the command line or read JSON.** The install section below is for engineers; once installed, you just talk to your AI.
-
-Worried the AI will break your file? The skill's core promise:
-- Original is **never touched by default**; edits land in a candidate copy
-- Any non-trivial change gets a dry-run preview first
-- Formulas / comments / merged cells / VBA are usually preserved. **Data-validation dropdowns, complex conditional formatting, and embedded charts may not round-trip** — the AI will warn you and ask you to open the candidate in Excel / WPS to eyeball it before overwriting.
+> 中文版本见 [README.md](README.md)。
 
 ---
 
-## What problem does this solve?
+- **Designers / PMs**: installation is a developer task. Once installed, talk to your AI agent in plain language about which row of which table to change; the agent will produce a candidate, show a preview, and wait for your approval before overwriting. See the dialogue samples in [`SKILL.md`](SKILL.md).
+- **Developers / engineers**: read on.
 
-Game designers, PMs, and non-engineers often own large Excel / CSV configuration tables (items, levels, rewards, localization). Asking an AI to "just change row 10001's quality from 2 to 3" today is dangerous:
+## What problem this solves
 
-- The AI may overwrite your file in place
-- It may guess a column name wrong and silently corrupt a row
-- It may miss that a related table (localization, icons) also needs an entry
+Designers and non-engineers maintain large Excel / CSV configuration tables (items, levels, rewards, localization). Asking an AI to edit them directly has three common failure modes:
 
-This skill wraps the AI in a **scan → preview → candidate → diff → user-confirms** loop. **AI does the typing; you do the deciding.**
+1. The AI overwrites the source file, breaking downstream builds.
+2. The AI misidentifies a column and silently corrupts a row — discovered days later.
+3. A related table (localization, icons) is missed, producing blanks or runtime asserts.
 
-## Who is this for?
+This skill wraps every edit in a fixed **inspect → preview → candidate → diff → user confirms** pipeline, making "AI does the typing, human decides" the default behavior — not something the prompt has to remind it of.
 
-- **Designers / PMs** who own config tables and currently fear letting an AI touch them
-- **Engineers** who want a reusable, audit-friendly pattern for AI-assisted config edits
-- **Anyone** using Claude Code, Codex, Cursor, or another agent CLI on tabular config data
-
-## What a minimal interaction looks like
+## Pipeline
 
 ```
-You:  Change item 10003's quality to 3 in ~/myproj/cfg/Item.xlsx
-
-AI:   Found it. 10003 is "Potion", currently quality 2. I'll make a copy with
-      just that one cell changed (highlighted yellow) — your original is untouched.
-      Preview the change first?
-
-You:  Yes
-
-AI:   Preview: Item sheet, row 7 (the row starting `10003 / Potion`),
-      Quality column, 2 → 3. Nothing else changes. Generate the candidate?
-
-You:  Generate
-
-AI:   Done: ~/myproj/cfg/Item_candidate.xlsx. The diff shows only that single
-      cell changed. Want me to overwrite Item.xlsx, or copy it over yourself?
+inspect        →  patch (dry-run)  →  patch          →  diff             →  validate_refs
+scan tables       preview cells       copy source,      compare source     cross-table FK
+emit inventory    do not write        edit candidate,   vs candidate per   (orphan) check —
++ patch skeleton                      mark edited yellow sheet              last guard before
+                                                                            overwrite
 ```
 
----
+Each step is an independent Python script with atomic failure (errors exit cleanly and never leave half-written outputs). The agent follows the `SKILL.md` workflow to chain these five steps and pauses for user input at "generate candidate" and "overwrite source" decision points.
 
-## Install (for engineers)
+## Quickstart (5 minutes, local)
 
-Pick the line that matches your agent:
+```bash
+git clone https://github.com/1aita0v/ai-config-table-skill.git
+cd ai-config-table-skill
+pip install openpyxl
+
+# Build a sample workbook (mimics a typical game config: multi-row header + loc + reward tables)
+python3 examples/build_sample.py
+
+# Run the full 5-step pipeline
+python3 scripts/inspect_config_tables.py --root examples/sample.xlsx --format md --output inventory.md --patch-template patch.json
+python3 scripts/patch_xlsx.py     --source examples/sample.xlsx --output examples/sample_candidate.xlsx --patch examples/sample-patch.json --dry-run
+python3 scripts/patch_xlsx.py     --source examples/sample.xlsx --output examples/sample_candidate.xlsx --patch examples/sample-patch.json
+python3 scripts/diff_config_tables.py --source examples/sample.xlsx --candidate examples/sample_candidate.xlsx --output diff.md
+python3 scripts/validate_refs.py  --workbook examples/sample_candidate.xlsx
+```
+
+The annotated version with expected output and cleanup is in [`examples/walkthrough.md`](examples/walkthrough.md).
+
+## Installing into your agent
+
+Pick the line matching your agent CLI:
 
 ```bash
 # Codex CLI
 git clone https://github.com/1aita0v/ai-config-table-skill.git "${CODEX_HOME:-$HOME/.codex}/skills/ai-config-table"
 
-# Claude Code (user-level — available in all projects)
+# Claude Code (user-level — available in every project)
 git clone https://github.com/1aita0v/ai-config-table-skill.git ~/.claude/skills/ai-config-table
 
 # Cursor / Continue / Aider / other
 git clone https://github.com/1aita0v/ai-config-table-skill.git ~/ai-config-table-skill
-# add a line to your project rules file (.cursorrules, AGENTS.md, CLAUDE.md):
-#   See ~/ai-config-table-skill/SKILL.md for config-table editing workflow.
+# Then add a line to your project rules file (.cursorrules / AGENTS.md / CLAUDE.md):
+#   For config-table edits, follow the workflow in ~/ai-config-table-skill/SKILL.md.
 ```
 
-That's it. Next time you talk to your agent about a config table, the skill activates automatically. The YAML triggers cover both English ("change config table", "use this project's config tables") and Chinese ("AI配表", "改配置表", "加一行") phrasings.
+The agent activates the skill automatically once installed — the YAML trigger phrases cover common English and Chinese expressions (`change config table`, `add a row`, `AI配表`, `改配置表`, …).
 
-**Requirements:** Python 3.8+. For `.xlsx` / `.xlsm` editing, `pip install openpyxl`. CSV / TSV / JSON work with the standard library alone.
+## What's inside
+
+| Path | Purpose |
+|---|---|
+| [`SKILL.md`](SKILL.md) | The workflow the AI follows — decision points, dialogue samples, change-set tiering, platform notes, project memory |
+| [`scripts/inspect_config_tables.py`](scripts/inspect_config_tables.py) | Scans a config directory; emits `inventory.md` and a pre-filled `patch.json` skeleton |
+| [`scripts/patch_xlsx.py`](scripts/patch_xlsx.py) | Copies source to candidate, applies the patch JSON, highlights edited cells; supports `--dry-run` |
+| [`scripts/diff_config_tables.py`](scripts/diff_config_tables.py) | Compares source and candidate per sheet, surfacing value diffs and formula changes |
+| [`scripts/validate_refs.py`](scripts/validate_refs.py) | Cross-table FK (orphan) check — auto-detects references like `Item.LocKey → LocText.LocKey` |
+| [`scripts/find_table.py`](scripts/find_table.py) | Keyword search across sheets and fields in an inventory (for vague user descriptions) |
+| [`scripts/learn.py`](scripts/learn.py) | Persists user-confirmed field meanings and conventions into `<config-root>/.ai-config-table/` project memory |
+| [`references/`](references/) | Templates and checklists the AI consults internally — patch JSON format, field-meaning evidence sources, RPG config patterns, pre-release checklist, etc. |
+| [`examples/walkthrough.md`](examples/walkthrough.md) | The full annotated 5-step run on the generated sample workbook |
+| [`agents/openai.yaml`](agents/openai.yaml) | Codex / OpenAI-style agent metadata (skill activation config) |
+
+## Compatibility
+
+- **Python**: 3.8+
+- **OS**: macOS / Linux / Windows
+- **xlsx / xlsm editing**: `pip install openpyxl`
+- **CSV / TSV / JSON**: standard library only
+
+On Windows the default code page is cp936/GBK; passing non-ASCII paths to Python on the command line often mangles them (`C:\TR\????\X.xlsx`). All scripts accept `--config FILE` to read parameters from a UTF-8 JSON file and bypass argv encoding entirely; they also detect `?` in paths and print a clear remediation message. Full details in the "Windows + non-ASCII paths" section of `SKILL.md`.
+
+## Versions
+
+Use `git tag --list` to browse history and `git checkout v1.x` to pin. Notable milestones in the current series:
+
+- **v2.x** — fuzzy input handling, 4-tier change-set granularity, `find_table` keyword search
+- **v1.7** — project memory under `<config-root>/.ai-config-table/`
+- **v1.5+** — full Windows + non-ASCII path support
+- **v1.4** — note column, pinned dependency versions, write-path fallback
+
+Per-version details live in the corresponding commit messages.
 
 ## Updating
 
@@ -91,32 +118,10 @@ cd ~/.claude/skills/ai-config-table   # or wherever you installed it
 git pull
 ```
 
-Tagged releases (`git tag --list`) mark stable points. Use `git checkout v1.2` to pin.
-
-## What's inside
-
-- `SKILL.md` — the workflow the AI follows, including dialogue patterns and how to talk to non-engineers
-- `scripts/` — Python scripts the AI runs (scan / patch / diff / **cross-table reference validator**)
-- `references/` — templates and checklists the AI uses internally (not user-facing forms)
-- `examples/` — sample workbook builder + a complete walkthrough
-- `agents/openai.yaml` — Codex / OpenAI-style skill metadata
-
-## Windows + non-ASCII paths
-
-On Windows the default codepage is usually cp936/GBK, not UTF-8. Passing non-ASCII paths through the shell to Python often mangles them (`C:\TR\????\X.xlsx`) — this is a Windows-side argv encoding problem, not a bug in the scripts.
-
-**Workaround**: use `--config FILE` mode. Write all parameters (including paths) to a UTF-8 JSON file at an ASCII-only location (e.g. `C:\Temp\config.json`), then call:
-
-```bash
-python3 scripts/inspect_config_tables.py --config C:\Temp\config.json
-```
-
-`SKILL.md` documents this in full and AI assistants follow it automatically once the skill is installed. The scripts also detect `?` in paths and surface a clear error pointing at this fix.
-
 ## License
 
 MIT. See [LICENSE](LICENSE).
 
-## Found a bug / want an improvement?
+## Feedback
 
-Open an issue at https://github.com/1aita0v/ai-config-table-skill/issues — include the file format, what you asked the AI to do, and what went wrong.
+Bug reports and feature requests: [GitHub Issues](https://github.com/1aita0v/ai-config-table-skill/issues). Please include file format, the instruction given to the AI, and the gap between actual and expected behavior.

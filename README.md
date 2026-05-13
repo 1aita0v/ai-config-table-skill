@@ -1,89 +1,114 @@
 # ai-config-table-skill
 
-一个跨项目通用的 AI 能力包,让你的 AI 助手(Claude Code、Codex、Cursor)**安全地改你的配置表** —— Excel / CSV / TSV / JSON —— 在你点头之前,绝不动你的原文件。
+[![License: MIT](https://img.shields.io/github/license/1aita0v/ai-config-table-skill)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
+[![Latest tag](https://img.shields.io/github/v/tag/1aita0v/ai-config-table-skill?label=release)](https://github.com/1aita0v/ai-config-table-skill/tags)
 
-无 MCP、无插件、无 SaaS,本质就是一个 Markdown + Python 的文件夹。
+让 AI agent(Claude Code、Codex、Cursor 等)**安全地编辑 Excel / CSV / TSV / JSON 配置表** —— 原文件永远先做副本和 diff,覆盖前必须用户明确确认。
 
-> 🌍 English: [README_en.md](README_en.md)
+无 MCP、无插件、无 SaaS,只是一份 Markdown + 几个 Python 脚本。
 
----
-
-## 👤 给策划:你只看这一段就够
-
-**装好之后**:
-
-跟 AI 说人话,比如:
-
-> 帮我把 `~/myproj/cfg/Item.xlsx` 里 10001 的品质改成 3
-
-AI 会自动:**扫一遍 → 给你看预览 → 生成一个改后的副本(原文件不动)→ 摆出对比清单**。你看了 OK,说「覆盖」,AI 才会覆盖。
-
-**你完全不用碰命令行,也不用看 JSON。** 下面的安装那一段是给程序员看的;装完之后正常跟 AI 对话就行。
-
-担心 AI 改坏表?这个 skill 的核心承诺:
-- 原文件**默认不动**,改动先去副本
-- 任何复杂改动会先 dry-run 预览
-- 公式 / 批注 / 合并单元格 / VBA 一般都会保留;数据验证下拉框、复杂条件格式、嵌入图表**可能会丢** —— 这种情况 AI 会主动告诉你,让你用 Excel / WPS 打开副本肉眼对比一次再覆盖。
+> Available in [English](README_en.md).
 
 ---
 
-## 它解决什么问题?
+- **如果你是策划 / PM**:安装由开发完成。装好之后用自然语言告诉 AI 改哪张表的哪一行就行;AI 会生成副本、出预览、等你确认再覆盖。完整对话示例见 [`SKILL.md`](SKILL.md)。
+- **如果你是开发**:继续往下看。
 
-策划、PM、非程序员经常要管一堆 Excel / CSV 配置表(道具表、关卡表、奖励表、文本表)。今天直接让 AI "把 10001 这一行品质从 2 改成 3" 是危险的:
+## 它解决什么问题
 
-- AI 可能直接覆盖你的原文件,把下游搞坏
-- AI 可能把列名认错,悄无声息地把某一行写坏
-- AI 可能没注意到关联的另一张表(文本、图标)也得改,结果游戏里显示空白
+策划手里有大量 Excel / CSV 配表(道具、关卡、奖励、文案),直接让 AI 改原文件有三个常见风险:
 
-这个 skill 给 AI 套了一个 **扫一遍 → 预览 → 生成副本 → 对比 → 你确认** 的流程。**AI 干活,你拍板**。
+1. AI 把原文件覆盖了,下游构建挂掉
+2. AI 把列名认错,某一行被静默写坏,几天后才被发现
+3. 关联表(文案、图标)忘了同步,运行时显示空白或断言
 
-## 谁用得上?
+这个 skill 把 AI 套进一条 **扫描 → 预览 → 副本 → 对比 → 用户确认** 的固定流程,让"AI 干活、人拍板"成为默认行为,而不是靠 prompt 提醒。
 
-- **策划 / PM** —— 手里有配置表,但不敢丢给 AI
-- **程序员** —— 想给团队一个可复用、可审计的"AI 改配表"模式
-- **任何人** —— 用 Claude Code、Codex、Cursor 等 agent CLI 处理表格
-
-## 一段最小对话长什么样
+## 工作流
 
 ```
-你:  帮我把 ~/myproj/cfg/Item.xlsx 里 10003 的品质改成 3
-
-AI:  找到了。10003 是 Potion(药水),当前品质 2。我会生成一个副本,
-     只动这一格(标黄),原文件不动。要我先预览一下吗?
-
-你:  好
-
-AI:  预览:Item 表第 7 行(`10003 / Potion`),品质列,2 → 3,
-     其他都不变。生成副本?
-
-你:  生成
-
-AI:  完成:~/myproj/cfg/Item_candidate.xlsx。对比下来只动了这一格。
-     要我帮你覆盖回 Item.xlsx 吗?还是你自己拖过去?
+inspect        →  patch (dry-run)  →  patch          →  diff             →  validate_refs
+扫描配表目录      预览将要改的格子      复制源、改副本     对比源 vs 副本     跨表外键(orphan)校验
+出 inventory     不写盘             改动的格子标黄     按 sheet 列改动    候选发布前最后兜底
++ patch 骨架
 ```
 
----
+每一步都是一个独立 Python 脚本,失败原子化(出错就退出,不留半截产物)。AI 跟着 `SKILL.md` 的工作流串这五步,用户在"实际生成副本"和"覆盖回去"两个节点参与决策。
 
-## 安装(给程序员)
+## Quickstart(5 分钟在本地试一遍)
 
-挑一条匹配你 agent 的命令:
+```bash
+git clone https://github.com/1aita0v/ai-config-table-skill.git
+cd ai-config-table-skill
+pip install openpyxl
+
+# 生成样例工作簿(模拟典型游戏配表:多行表头 + 文案表 + 奖励表)
+python3 examples/build_sample.py
+
+# 跑完整 5 步流程
+python3 scripts/inspect_config_tables.py --root examples/sample.xlsx --format md --output inventory.md --patch-template patch.json
+python3 scripts/patch_xlsx.py     --source examples/sample.xlsx --output examples/sample_candidate.xlsx --patch examples/sample-patch.json --dry-run
+python3 scripts/patch_xlsx.py     --source examples/sample.xlsx --output examples/sample_candidate.xlsx --patch examples/sample-patch.json
+python3 scripts/diff_config_tables.py --source examples/sample.xlsx --candidate examples/sample_candidate.xlsx --output diff.md
+python3 scripts/validate_refs.py  --workbook examples/sample_candidate.xlsx
+```
+
+带逐步说明、预期输出、清理命令的完整版本见 [`examples/walkthrough.md`](examples/walkthrough.md)。
+
+## 安装到你的 agent
+
+挑一条匹配你的 agent CLI:
 
 ```bash
 # Codex CLI
 git clone https://github.com/1aita0v/ai-config-table-skill.git "${CODEX_HOME:-$HOME/.codex}/skills/ai-config-table"
 
-# Claude Code(用户级,所有项目都能用)
+# Claude Code(用户级,所有项目都可用)
 git clone https://github.com/1aita0v/ai-config-table-skill.git ~/.claude/skills/ai-config-table
 
 # Cursor / Continue / Aider / 其他
 git clone https://github.com/1aita0v/ai-config-table-skill.git ~/ai-config-table-skill
-# 在项目规则文件(.cursorrules / AGENTS.md / CLAUDE.md)里加一行:
-#   配置表相关的修改,请参考 ~/ai-config-table-skill/SKILL.md 的工作流。
+# 然后在项目规则文件(.cursorrules / AGENTS.md / CLAUDE.md)里加一行:
+#   配置表相关的改动请按 ~/ai-config-table-skill/SKILL.md 的工作流执行。
 ```
 
-装完就行。下次跟 AI 聊配置表它会自动激活(YAML 已经覆盖中英文触发词:"AI配表"、"改配置表"、"加一行"……)。
+安装后 skill 会被对应 agent 自动激活 —— YAML 触发词覆盖中英文常见表达(`AI配表` / `改配置表` / `加一行` / `change config table` …)。
 
-**前置条件**:Python 3.8+。改 `.xlsx` / `.xlsm` 需要 `pip install openpyxl`。CSV / TSV / JSON 标准库即可。
+## 包内结构
+
+| 路径 | 作用 |
+|---|---|
+| [`SKILL.md`](SKILL.md) | AI 跟着走的工作流主文档:决策点、对话样例、差集分级、平台兼容、项目记忆 |
+| [`scripts/inspect_config_tables.py`](scripts/inspect_config_tables.py) | 扫描配表目录,生成 `inventory.md` 和 `patch.json` 骨架 |
+| [`scripts/patch_xlsx.py`](scripts/patch_xlsx.py) | 复制源到副本,按 patch JSON 改动并把改过的格子标黄;支持 `--dry-run` |
+| [`scripts/diff_config_tables.py`](scripts/diff_config_tables.py) | 对比源和副本,按 sheet 列出值差异和公式变化 |
+| [`scripts/validate_refs.py`](scripts/validate_refs.py) | 跨表外键(orphan)校验,自动检测 `Item.LocKey → LocText.LocKey` 这类引用 |
+| [`scripts/find_table.py`](scripts/find_table.py) | 按关键词在 inventory 里搜 sheet 和字段(用户描述模糊时定位) |
+| [`scripts/learn.py`](scripts/learn.py) | 把用户确认过的字段含义、约定写入 `<config-root>/.ai-config-table/` 项目记忆 |
+| [`references/`](references/) | AI 内部走流程时引用的模板和清单(patch JSON 格式、字段含义证据来源、RPG 配表心智模型、发布前 checklist 等) |
+| [`examples/walkthrough.md`](examples/walkthrough.md) | 5 步流程的完整 walkthrough,跑在自动生成的样例工作簿上 |
+| [`agents/openai.yaml`](agents/openai.yaml) | Codex / OpenAI 风格 agent 元数据(skill 激活配置) |
+
+## 兼容性
+
+- **Python**:3.8+
+- **平台**:macOS / Linux / Windows
+- **xlsx / xlsm 编辑**:需要 `pip install openpyxl`
+- **CSV / TSV / JSON**:Python 标准库即可
+
+Windows 默认代码页是 cp936/GBK,把含中文的路径作为命令行参数传给 Python 时容易丢字(`C:\TR\????\X.xlsx`)。所有脚本都支持 `--config FILE` 模式,把参数写到 UTF-8 JSON 里绕开 argv 编码;脚本也会主动检测路径里的 `?` 字符并报清晰错误。完整规则见 `SKILL.md` 的 "Windows + 非 ASCII 路径" 段。
+
+## 版本
+
+`git tag --list` 查看历史版本,`git checkout v1.x` 钉死某个版本。当前版本系列(v1.x → v2.x)主要差异:
+
+- **v2.x** 引入模糊输入处理、4 段差集分级、`find_table` 搜索
+- **v1.7** 引入项目记忆(`<config-root>/.ai-config-table/`)
+- **v1.5+** 完整 Windows + 非 ASCII 路径兼容
+- **v1.4** 备注列、依赖钉版本、写盘 fallback
+
+每个版本的具体改动见对应 commit message。
 
 ## 更新
 
@@ -92,28 +117,10 @@ cd ~/.claude/skills/ai-config-table   # 或你装的位置
 git pull
 ```
 
-`git tag --list` 看稳定点,`git checkout v1.2` 钉死某个版本。
-
-## 包里有什么
-
-- `SKILL.md` —— AI 跟着走的工作流,含对话样例和非程序员话术指南
-- `scripts/` —— AI 跑的 Python 小脚本(扫描 / 改副本 / 对比 / **跨表引用对账**)
-- `references/` —— AI 内部走流程用的模板和清单(不要丢给用户填)
-- `examples/` —— 样例 Excel 构建器 + 完整 walkthrough
-- `agents/openai.yaml` —— Codex / OpenAI 风格元数据
-
-## Windows + 中文路径
-
-Windows 默认代码页是 cp936,把中文路径作为命令行参数传给 Python 时,中间会丢字(`C:\TR\????\X.xlsx`)。这跟我们的脚本无关,是 Windows + agent 的 argv 编码问题。
-
-**解决办法**:用 `--config FILE` 模式 —— 把参数写到 UTF-8 JSON 文件里,绕开 argv。`SKILL.md` 里已经写了完整规则,装好之后 AI 会自动按规则用。
-
-脚本也会**主动检测路径里的 `?` 字符**,出问题时直接报清晰错误并列出修复步骤。
-
-## 协议
+## 许可证
 
 MIT。详见 [LICENSE](LICENSE)。
 
-## 发现 bug / 想要新功能
+## 反馈
 
-到 https://github.com/1aita0v/ai-config-table-skill/issues 开 issue —— 说清楚文件格式、你让 AI 做什么、它哪里做错了。
+Bug 报告 / 功能建议:[GitHub Issues](https://github.com/1aita0v/ai-config-table-skill/issues)。请附文件格式、给 AI 的指令、以及实际行为与预期的差异。
