@@ -161,13 +161,19 @@ python3 scripts/validate_refs.py --workbook examples/sample_candidate.xlsx
 
 ## 实际项目里也是同样的三条命令
 
+**默认 per-sheet auto-detect**(混合表头时必须用):
+
 ```bash
-python3 scripts/inspect_config_tables.py --root /your/config --field-row N --meta-rows R,R,R --format md --output inventory.md
+python3 scripts/inspect_config_tables.py --root /your/config --format md --output /your/config/inventory.md
 python3 scripts/patch_xlsx.py --source your.xlsx --output your_candidate.xlsx --patch your-patch.json --dry-run
 python3 scripts/patch_xlsx.py --source your.xlsx --output your_candidate.xlsx --patch your-patch.json
 python3 scripts/diff_config_tables.py --source your.xlsx --candidate your_candidate.xlsx --output diff.md
-python3 scripts/validate_refs.py --workbook your_candidate.xlsx --field-row N --meta-rows R,R,R
+python3 scripts/validate_refs.py --workbook your_candidate.xlsx
 ```
+
+> **只有当整个 workbook 所有 sheet 表头行数都一致时**,才能传全局 `--field-row N --meta-rows R,R,R`。否则用上面默认(无参数)让脚本逐 sheet 检测 —— 否则会把类型行 / 注释行当成数据,误报 orphan。
+>
+> `--output` 写到 root 所在目录(root 是文件夹就是它本身;root 是单个文件就是其父目录),不要只写 `inventory.md`,会落到 cwd。
 
 patch JSON 格式见 `references/patch-format.md`。
 校验清单见 `references/validation-checklist.md`。
