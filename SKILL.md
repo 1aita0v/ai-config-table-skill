@@ -141,7 +141,7 @@ description: >-
 
 > **用户**: 直接帮我把改完的文件覆盖回去就行,别给我看什么副本了,麻烦
 >
-> **AI**: 好,我可以直接覆盖。不过我顺手做了个副本并不耽误时间,你愿意瞄一眼总结再覆盖最稳。这样吧:我**同时**做两件事 —— 生成副本 + 给你一句话总结。你说 OK 我立刻覆盖,说"不对"我也马上回滚。30 秒,不绕路。
+> **AI**: 副本和 diff 是这工具的底线 —— 没有它们我一旦改错没法救,所以这两步省不掉,但**我可以把它们压成一句话**:我生成 `X_candidate.xlsx`,然后用一句话告诉你改了哪几格。你看着对就一个字 OK,我再覆盖回原文件;不对你说哪不对,我改 patch 重来。**覆盖前必须你点头**。这样既不绕路,也不会把你原文件改坏。
 
 ### 样例 6 — 用户说不清哪张表(用 find_table)
 
@@ -402,7 +402,7 @@ python3 scripts/learn.py \
 1. **问用户三件事**(表在哪 / 什么格式 / 表头几行),或直接拿到文件夹路径。
 2. **跑 inspect + 生成 patch 骨架**(一条命令同时拿 inventory 和骨架):
    ```bash
-   python3 scripts/inspect_config_tables.py --root <用户给的路径> --output inventory.md --patch-template patch.json
+   python3 scripts/inspect_config_tables.py --root <用户给的路径> --format md --output inventory.md --patch-template patch.json
    ```
 3. **读 inventory.md** —— 知道表里都有什么 sheet、每张 sheet 的字段名。**留意 HINT 提示**(`row 1 像中文 / row 2 像英文字段`、`row N 像注释`)。如果开头有 **`## Project Memory`** 段,**先读它**,把已知规律应用到本任务,不要重复问用户已经记录过的事。
 4. **读 patch.json 骨架** —— 它已经按 per-sheet 自动检测填好了 `field_row / meta_rows / data_start_row / key_field / _fields_available`。**不要凭印象写 schema,在骨架上填 `updates` / `appends` 就行**。

@@ -485,6 +485,8 @@ def main() -> None:
             raise SystemExit(f"--{field} is required (pass it on the CLI or include it in --config).")
     if not args.source.exists():
         raise SystemExit(f"Source not found: {args.source}")
+    if not args.patch.exists():
+        raise SystemExit(f"Patch file not found: {args.patch}")
     # Excel / WPS leaves a `~$name.xlsx` marker when name.xlsx is open. Refuse
     # to overwrite a candidate that's currently open — saving would silently
     # fail or corrupt the file.
@@ -498,7 +500,10 @@ def main() -> None:
             f"This script never edits the source in place; pick a candidate path like "
             f"{args.source.with_name(args.source.stem + '_candidate' + args.source.suffix).name}."
         )
-    patch = json.loads(args.patch.read_text(encoding="utf-8"))
+    try:
+        patch = json.loads(args.patch.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Patch file is not valid JSON ({args.patch}): {exc}") from exc
 
     if args.dry_run:
         wb = load_workbook(args.source, data_only=False, keep_vba=args.source.suffix.lower() == ".xlsm")
@@ -513,6 +518,22 @@ def main() -> None:
             plans.append(collect_planned_changes(wb[sheet_name], sheet_patch))
         sys.stdout.write(render_dry_run(plans) + "\n")
         return
+
+    # Validate against the source workbook BEFORE copying it to --output, so
+    # bad sheet / key / field surfaces a friendly SystemExit (matching dry-run)
+    # rather than a KeyError traceback after a half-written candidate exists.
+    wb_validate = load_workbook(
+        args.source, data_only=False, keep_vba=args.source.suffix.lower() == ".xlsm",
+    )
+    for sheet_patch in patch.get("sheets", []):
+        sheet_name = sheet_patch["sheet"]
+        if sheet_name not in wb_validate.sheetnames:
+            raise SystemExit(
+                f"Sheet not found: {sheet_name}\n"
+                f"{suggest(sheet_name, list(wb_validate.sheetnames))}"
+            )
+        collect_planned_changes(wb_validate[sheet_name], sheet_patch)
+    wb_validate.close()
 
     output_path = args.output
     warnings: list[str] = []

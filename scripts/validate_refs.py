@@ -292,10 +292,16 @@ def render_md(report: dict[str, Any]) -> str:
         return "\n".join(lines)
 
     total_orphans = sum(r.get("orphan_count", 0) for r in refs)
-    if total_orphans == 0:
+    error_refs = [r for r in refs if r.get("error")]
+    if total_orphans == 0 and not error_refs:
         lines.append(f"## ✅ All {len(refs)} reference(s) resolve cleanly")
     else:
-        lines.append(f"## ❌ {total_orphans} orphan value(s) across {len(refs)} reference(s)")
+        bits: list[str] = []
+        if total_orphans:
+            bits.append(f"{total_orphans} orphan value(s)")
+        if error_refs:
+            bits.append(f"{len(error_refs)} schema error(s)")
+        lines.append(f"## ❌ {' / '.join(bits)} across {len(refs)} reference(s)")
     lines.append("")
 
     for ref in refs:
@@ -467,10 +473,14 @@ def main() -> None:
     else:
         sys.stdout.write(text)
 
-    # Non-zero exit when there are orphans, so CI / scripts can detect failures.
+    # Non-zero exit on orphans OR schema errors, so CI / scripts catch both.
     total_orphans = sum(r.get("orphan_count", 0) for r in checked_refs)
-    if total_orphans > 0:
-        sys.stderr.write(f"\n[validate_refs] {total_orphans} orphan(s) found across {len(checked_refs)} ref(s).\n")
+    error_refs = [r for r in checked_refs if r.get("error")]
+    if total_orphans > 0 or error_refs:
+        sys.stderr.write(
+            f"\n[validate_refs] {total_orphans} orphan(s), "
+            f"{len(error_refs)} schema error(s) across {len(checked_refs)} ref(s).\n"
+        )
         sys.exit(1)
 
 

@@ -108,19 +108,19 @@ python3 scripts/patch_xlsx.py \
   --patch examples/sample-patch.json
 ```
 
-输出:
+输出(简化,实际还会带 `tool_versions` 字段):
 
 ```json
 {
   "output": "examples/sample_candidate.xlsx",
   "sheets": [
-    {"changed_cells": 8, "appended_rows": 1, "sheet": "Item"},
-    {"changed_cells": 3, "appended_rows": 1, "sheet": "LocText"}
+    {"changed_cells": 9, "appended_rows": 1, "note_writes": 2, "sheet": "Item"},
+    {"changed_cells": 3, "appended_rows": 1, "note_writes": 0, "sheet": "LocText"}
   ]
 }
 ```
 
-`sample.xlsx` 没动。`sample_candidate.xlsx` 里被改的格子标了黄。
+`changed_cells` = update 改格数 + append 列数(Item: 2 update + 7 列 append = 9);`note_writes` 单独统计。`sample.xlsx` 没动,`sample_candidate.xlsx` 里被改的格子标了黄。
 
 ## 4. Diff
 
@@ -152,13 +152,12 @@ rm examples/sample_candidate.xlsx examples/inventory.md examples/diff.md
 ## 5b. 跨表引用对账(可选,但建议)
 
 ```bash
-python3 scripts/validate_refs.py \
-  --workbook examples/sample_candidate.xlsx \
-  --field-row 2 \
-  --meta-rows 1
+python3 scripts/validate_refs.py --workbook examples/sample_candidate.xlsx
 ```
 
-会自动检测 `Item.LocKey → LocText.LocKey` 这种引用,跑出来如果有 orphan(候选里加了 Item 没加 LocText),会列出哪一行的哪个 LocKey 找不到对应。**这就是 agent 视角下"最值钱的兜底"**。
+会**逐 sheet 自动检测**表头行 (Item 是 4 行表头,LocText 是 2 行,Reward 是 1 行 —— 全局传一个 `--field-row` 会让 Item 把类型/注释行当成数据,误报 orphan)。然后再自动检测 `Item.LocKey → LocText.LocKey` 这种引用,跑出来如果有 orphan(候选里加了 Item 没加 LocText),会列出哪一行的哪个 LocKey 找不到对应。**这就是 agent 视角下"最值钱的兜底"**。
+
+> **混合表头优先用 per-sheet auto-detect**。只有当整个 workbook 的所有 sheet 表头行数都一致时,才传 `--field-row N --meta-rows R,R,R` 这种全局参数。否则用默认(无参数)让脚本逐 sheet 检测。
 
 ## 实际项目里也是同样的三条命令
 

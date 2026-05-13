@@ -415,13 +415,19 @@ def inspect_excel(path: Path, args: argparse.Namespace) -> dict[str, Any]:
     wb = load_workbook(path, read_only=True, data_only=False, keep_vba=path.suffix.lower() == ".xlsm")
     sheets = []
     file_hints: list[str] = []
+    # When the user passes neither --field-row nor --meta-rows, show the
+    # per-sheet auto-detected layout in inventory too. Otherwise the inventory
+    # (using global guess_header) and the --patch-template (using per-sheet
+    # auto-detect) report different field_row / data_start_row for the same
+    # sheet, which confuses agents reading both outputs of one inspect run.
+    user_specified_header = args.field_row is not None or bool(args.meta_rows)
     for ws in wb.worksheets[: args.max_sheets]:
         rows: list[list[str]] = []
         for idx, row in enumerate(ws.iter_rows(values_only=True)):
             rows.append(trim([norm(cell) for cell in row[: args.max_cols]]))
             if idx + 1 >= args.max_scan_rows:
                 break
-        field_idx, data_start, headers = resolve_header_layout(
+        cli_field_idx, cli_data_start_idx, cli_headers = resolve_header_layout(
             rows, args.field_row, args.meta_rows, args.header_scan_rows
         )
         sheet_hints = detect_layout_hints(rows, args.field_row, args.meta_rows)
@@ -431,6 +437,16 @@ def inspect_excel(path: Path, args: argparse.Namespace) -> dict[str, Any]:
         # since global CLI args don't fit heterogeneous-header workbooks.
         auto_field_row, auto_meta_rows, auto_data_start = auto_detect_layout(rows)
         auto_headers = rows[auto_field_row - 1] if rows and 0 <= auto_field_row - 1 < len(rows) else []
+        if user_specified_header:
+            disp_field_row = cli_field_idx + 1
+            disp_meta_rows = list(args.meta_rows) if args.meta_rows else []
+            disp_data_start_idx = cli_data_start_idx
+            disp_headers = cli_headers
+        else:
+            disp_field_row = auto_field_row
+            disp_meta_rows = list(auto_meta_rows)
+            disp_data_start_idx = auto_data_start - 1
+            disp_headers = auto_headers
         sheets.append(
             {
                 "name": ws.title,
@@ -438,11 +454,11 @@ def inspect_excel(path: Path, args: argparse.Namespace) -> dict[str, Any]:
                 "declared_cols": ws.max_column,
                 "observed_rows": len(rows),
                 "observed_cols": max((len(row) for row in rows), default=0),
-                "field_row": field_idx + 1,
-                "meta_rows": list(args.meta_rows) if args.meta_rows else [],
-                "data_start_row": data_start + 1,
-                "fields": field_summary(headers),
-                "samples": sample_rows(rows, data_start, headers, args.sample_rows),
+                "field_row": disp_field_row,
+                "meta_rows": disp_meta_rows,
+                "data_start_row": disp_data_start_idx + 1,
+                "fields": field_summary(disp_headers),
+                "samples": sample_rows(rows, disp_data_start_idx, disp_headers, args.sample_rows),
                 "_auto": {
                     "field_row": auto_field_row,
                     "meta_rows": auto_meta_rows,
