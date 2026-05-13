@@ -489,6 +489,19 @@ def render_md(inventory: dict[str, Any]) -> str:
     if versions_label:
         lines.append(f"- Tool versions: {versions_label}")
     lines.append("")
+    memory = inventory.get("memory")
+    if memory:
+        lines.append("## Project Memory (.ai-config-table/)")
+        lines.append("")
+        lines.append(
+            f"AI: 这个项目有累积学习,**先读完下面再开工**。来源:`{memory['dir']}`。"
+        )
+        lines.append("")
+        for fname, body in memory.get("files", {}).items():
+            lines.append(f"### {fname}")
+            lines.append("")
+            lines.append(body.rstrip())
+            lines.append("")
     for file_info in inventory["files"]:
         lines.append(f"## {file_info['path']}")
         lines.append("")
@@ -613,6 +626,26 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def read_project_memory(root: Path) -> dict[str, Any] | None:
+    """Read <config-root>/.ai-config-table/ if it exists.
+
+    The memory directory is opt-in per-project — agents create it via
+    scripts/learn.py only when the user explicitly approves saving a learned
+    pattern. Once created, inspect dumps its content into the inventory output
+    so subsequent runs surface what the project already knows.
+
+    Returns None if no memory dir is present.
+    """
+    memory_dir = (root.parent if root.is_file() else root) / ".ai-config-table"
+    if not memory_dir.is_dir():
+        return None
+    memory: dict[str, Any] = {"dir": str(memory_dir), "files": {}}
+    # Read every .md file in the memory dir; order is deterministic for stable output.
+    for path in sorted(memory_dir.glob("*.md")):
+        memory["files"][path.name] = path.read_text(encoding="utf-8")
+    return memory
+
+
 def build_patch_template(inventory: dict[str, Any]) -> dict[str, Any]:
     """Build a skeleton patch JSON the agent can fill in.
 
@@ -679,6 +712,9 @@ def main() -> None:
         "tool_versions": tool_versions(include_openpyxl=needs_openpyxl),
         "files": files,
     }
+    memory = read_project_memory(args.root)
+    if memory is not None:
+        inventory["memory"] = memory
     text = json.dumps(inventory, ensure_ascii=False, indent=2) if args.format == "json" else render_md(inventory)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

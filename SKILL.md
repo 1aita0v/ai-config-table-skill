@@ -238,6 +238,60 @@ Mac / Linux 默认 UTF-8,中文路径直接走 argv 也没问题,不强制用 `-
 
 副本就是交付物,最后那一步用户自己关闭闭环 —— 这是用户的安全网,不是要绕过的障碍。
 
+## 项目记忆 (.ai-config-table/) —— 越用越聪明的关键
+
+每个项目的配置目录下可以有一个 `.ai-config-table/` 子目录,**accumulating** 这个项目特有的规律(命名约定 / 跨表引用 / ID 段语义 / 备注列约定 等)。
+
+**关键规则:任何累积都是用户明示同意后写入,绝不静默积累**。
+
+### inspect 自动读
+
+每次跑 inspect,如果 `<root>/.ai-config-table/` 存在,inventory.md 的开头会有一段 `## Project Memory` —— **开工前先读这一段**,把里面的规律当作已知前提应用到当前任务。
+
+### 什么时候建议入档
+
+任务跑完后,**主动问用户**(用户说"存"才存):
+
+- 检测到稳定的 **命名规律**(LocKey 都是 `ITEM_<id>_NAME`、技能 ID 第 3 位代表槽位 等等)
+- 摸清了 **跨表引用约定**(Reward.ItemID → Item.ItemID、Skill.BuffID#N → Buff.BuffID)
+- 用户**否决**了一次你以为对的判断(他说 X 不能这样改,要存下来下次别再问)
+- 发现了 **特殊字段** 含义(`AssetCode` 实际不是资源 id 而是分包代码,这种)
+
+**话术示例**:
+> 我注意到这个项目的 LocKey 都是 `ITEM_<id>_NAME` 格式 —— 要把这条记到 `.ai-config-table/` 里吗?下次加道具我就直接按这个生成,不再问你。
+
+### 怎么入档
+
+用户说存,你跑:
+
+```bash
+python3 scripts/learn.py \
+  --root /path/to/config \
+  --topic "LocKey 命名规则" \
+  --body "所有 LocKey 都是 ITEM_<id>_NAME 格式" \
+  --evidence "Item 表 5 条已有数据全符合" \
+  --apply-when "加新道具时直接按 ITEM_<新id>_NAME 生成,不再问用户"
+```
+
+脚本会:
+- 没建过的话,自动建 `<root>/.ai-config-table/` 目录 + 写 README + 初始化 `learned-patterns.md`
+- 把这条 pattern append 进 `learned-patterns.md`,带日期戳
+- 下次 inspect 自动把它带在 inventory 里给你看
+
+### 项目档案(profile)
+
+如果用户想把"这个项目的表结构 / 主表关系 / 命名规则"长期固化,用 Read / Write 直接维护 `<root>/.ai-config-table/profile.md`(没专门脚本 —— 这种东西需要 AI 跟用户共同编辑,不适合命令行)。inspect 看到 profile.md 也会读出来。
+
+### `.ai-config-table/` 要不要进 git
+
+由用户决定:
+- **commit**:团队共享经验,所有人(AI)都能用
+- **不 commit**:作为个人本地记忆,加进 `.gitignore`
+
+不是 skill 的事,用户自己定。
+
+---
+
 ## 不确定怎么做?照这个固定流程走(给所有 agent 的最低保障)
 
 如果你拿不准这次任务该怎么做、或你是一个能力一般的 agent —— **不要靠判断**,照下面顺序一步一步走,每步都能跑出来,然后看上一步输出再决定下一步:
@@ -247,7 +301,7 @@ Mac / Linux 默认 UTF-8,中文路径直接走 argv 也没问题,不强制用 `-
    ```bash
    python3 scripts/inspect_config_tables.py --root <用户给的路径> --output inventory.md --patch-template patch.json
    ```
-3. **读 inventory.md** —— 知道表里都有什么 sheet、每张 sheet 的字段名。**留意 HINT 提示**(`row 1 像中文 / row 2 像英文字段`、`row N 像注释`)。
+3. **读 inventory.md** —— 知道表里都有什么 sheet、每张 sheet 的字段名。**留意 HINT 提示**(`row 1 像中文 / row 2 像英文字段`、`row N 像注释`)。如果开头有 **`## Project Memory`** 段,**先读它**,把已知规律应用到本任务,不要重复问用户已经记录过的事。
 4. **读 patch.json 骨架** —— 它已经按 per-sheet 自动检测填好了 `field_row / meta_rows / data_start_row / key_field / _fields_available`。**不要凭印象写 schema,在骨架上填 `updates` / `appends` 就行**。
 5. **跟用户用大白话**复述你打算改什么(具体到 sheet、key、字段、新旧值),拿到确认。**复述时主动应用 `references/rpg-config-patterns.md` 里的 5 条心智模型**(下文)。
 6. **patch dry-run**:
@@ -266,6 +320,7 @@ Mac / Linux 默认 UTF-8,中文路径直接走 argv 也没问题,不强制用 `-
    ```
    **exit 非 0 = 有 orphan,先解决再覆盖**。
 10. **把副本路径告诉用户**,等明确"覆盖"指令。**沙盒拒写就不绕**,把路径交给用户手动操作(参见上面 *沙盒不让你覆盖原表怎么办*)。
+11. **任务结束前**,如果过程中发现了稳定的项目规律(命名约定 / 跨表对应 / 否决过的做法 等),**主动问用户**"要存到 `.ai-config-table/` 吗?",用户说存就跑 `scripts/learn.py`。下次开工就少问一遍。
 
 **任何一步报错,先读错误信息**:脚本现在会给出"Did you mean …?" 的建议(field / sheet / key 拼错时),`?` 路径会提示用 `--config`,Excel 锁文件会提示关闭工作簿。**不要尝试绕过错误,按错误信息修**。
 
