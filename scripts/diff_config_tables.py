@@ -17,6 +17,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# Sibling module — relies on the script's directory being on sys.path[0].
+from _config_loader import check_paths, load_config_file, merge_into_args
+
 
 SUPPORTED = {".xlsx", ".xlsm"}
 
@@ -162,8 +165,14 @@ def render_md(diff: dict[str, Any]) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Diff source and candidate Excel config files.")
-    parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--candidate", type=Path, required=True)
+    parser.add_argument(
+        "--source", type=Path, default=None,
+        help="Source workbook. (Required, but can also be provided via --config.)",
+    )
+    parser.add_argument(
+        "--candidate", type=Path, default=None,
+        help="Candidate workbook. (Required, but can also be provided via --config.)",
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--format", choices=("md", "json"), default="md")
     parser.add_argument("--max-cells", type=int, default=200000)
@@ -172,11 +181,23 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Also compare merged-cell ranges (slower; reloads workbooks without read_only).",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--config", type=Path, default=None,
+        help="Read all params from a UTF-8 JSON config file (use this on Windows when "
+             "paths contain non-ASCII characters).",
+    )
+    args = parser.parse_args()
+    cfg = load_config_file(args.config)
+    merge_into_args(args, cfg, path_fields=("source", "candidate", "output"))
+    check_paths(args, ("source", "candidate", "output", "config"))
+    return args
 
 
 def main() -> None:
     args = parse_args()
+    for field in ("source", "candidate"):
+        if getattr(args, field) is None:
+            raise SystemExit(f"--{field} is required (pass it on the CLI or include it in --config).")
     if not args.source.exists():
         raise SystemExit(f"Source not found: {args.source}")
     if not args.candidate.exists():

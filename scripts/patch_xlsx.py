@@ -25,6 +25,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# Sibling module — relies on the script's directory being on sys.path[0].
+from _config_loader import check_paths, load_config_file, merge_into_args
+
 
 def load_openpyxl():
     try:
@@ -381,9 +384,18 @@ def auto_suffix_path(path: Path) -> Path:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Copy and patch an Excel workbook.")
-    parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--patch", type=Path, required=True, help="Patch JSON path.")
+    parser.add_argument(
+        "--source", type=Path, default=None,
+        help="Source workbook. (Required, but can also be provided via --config.)",
+    )
+    parser.add_argument(
+        "--output", type=Path, default=None,
+        help="Candidate output path. (Required, but can also be provided via --config.)",
+    )
+    parser.add_argument(
+        "--patch", type=Path, default=None,
+        help="Patch JSON path. (Required, but can also be provided via --config.)",
+    )
     parser.add_argument("--force", action="store_true", help="Overwrite existing output without renaming.")
     parser.add_argument(
         "--strict",
@@ -396,11 +408,25 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print planned changes without writing the output file.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Read all params from a UTF-8 JSON config file (use this on Windows when "
+             "paths contain non-ASCII characters).",
+    )
+    args = parser.parse_args()
+    cfg = load_config_file(args.config)
+    merge_into_args(args, cfg, path_fields=("source", "output", "patch"))
+    check_paths(args, ("source", "output", "patch", "config"))
+    return args
 
 
 def main() -> None:
     args = parse_args()
+    for field in ("source", "output", "patch"):
+        if getattr(args, field) is None:
+            raise SystemExit(f"--{field} is required (pass it on the CLI or include it in --config).")
     if not args.source.exists():
         raise SystemExit(f"Source not found: {args.source}")
     if args.source.resolve() == args.output.resolve():

@@ -29,6 +29,10 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable
 
+# Sibling module — relies on the script's directory being on sys.path[0],
+# which Python guarantees when invoked as `python3 scripts/foo.py`.
+from _config_loader import check_paths, load_config_file, merge_into_args
+
 
 SUPPORTED = {".xlsx", ".xlsm", ".csv", ".tsv", ".json"}
 
@@ -516,7 +520,10 @@ def parse_ignore(value: str) -> list[str]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Inspect local configuration tables.")
-    parser.add_argument("--root", type=Path, required=True, help="Config root or single file.")
+    parser.add_argument(
+        "--root", type=Path, default=None,
+        help="Config root or single file. (Required, but can also be provided via --config.)",
+    )
     parser.add_argument("--output", type=Path, help="Output path.")
     parser.add_argument("--format", choices=("json", "md"), default="json")
     parser.add_argument(
@@ -556,9 +563,29 @@ def parse_args() -> argparse.Namespace:
         default="utf-8-sig",
         help="Preferred text encoding for CSV/TSV/JSON. Falls back to utf-8 / gbk / gb18030 on failure.",
     )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Read all params from a UTF-8 JSON config file (bypasses argv encoding; "
+             "use this on Windows when paths contain non-ASCII characters). "
+             "Keys match the argparse dest names (e.g. 'field_row', 'meta_rows').",
+    )
     args = parser.parse_args()
-    args.meta_rows = parse_meta_rows(args.meta_rows)
-    args.ignore = parse_ignore(args.ignore)
+    # Merge --config FILE values onto args before any path is touched.
+    cfg = load_config_file(args.config)
+    merge_into_args(
+        args, cfg,
+        path_fields=("root", "output", "patch_template"),
+        list_fields=("meta_rows", "ignore"),
+    )
+    # Type-coerce string forms passed via CLI (the JSON path is already typed).
+    if isinstance(args.meta_rows, str):
+        args.meta_rows = parse_meta_rows(args.meta_rows)
+    if isinstance(args.ignore, str):
+        args.ignore = parse_ignore(args.ignore)
+    # Fail early with a friendly message if any path was mangled by argv encoding.
+    check_paths(args, ("root", "output", "patch_template", "config"))
     return args
 
 
@@ -609,6 +636,8 @@ def build_patch_template(inventory: dict[str, Any]) -> dict[str, Any]:
 
 def main() -> None:
     args = parse_args()
+    if args.root is None:
+        raise SystemExit("--root is required (pass it on the CLI or include it in --config).")
     if not args.root.exists():
         raise SystemExit(f"Root not found: {args.root}")
     files = []

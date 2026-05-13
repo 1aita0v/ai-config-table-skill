@@ -102,6 +102,14 @@ git pull
 - `examples/` —— 样例 Excel 构建器 + 完整 walkthrough
 - `agents/openai.yaml` —— Codex / OpenAI 风格元数据
 
+## Windows + 中文路径
+
+Windows 默认代码页是 cp936,把中文路径作为命令行参数传给 Python 时,中间会丢字(`C:\TR\????\X.xlsx`)。这跟我们的脚本无关,是 Windows + agent 的 argv 编码问题。
+
+**解决办法**:用 `--config FILE` 模式 —— 把参数写到 UTF-8 JSON 文件里,绕开 argv。`SKILL.md` 里已经写了完整规则,装好之后 AI 会自动按规则用。
+
+脚本也会**主动检测路径里的 `?` 字符**,出问题时直接报清晰错误并列出修复步骤。
+
 ## 协议
 
 MIT。详见 [LICENSE](LICENSE)。

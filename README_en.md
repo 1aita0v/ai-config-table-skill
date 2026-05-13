@@ -101,6 +101,18 @@ Tagged releases (`git tag --list`) mark stable points. Use `git checkout v1.2` t
 - `examples/` — sample workbook builder + a complete walkthrough
 - `agents/openai.yaml` — Codex / OpenAI-style skill metadata
 
+## Windows + non-ASCII paths
+
+On Windows the default codepage is usually cp936/GBK, not UTF-8. Passing non-ASCII paths through the shell to Python often mangles them (`C:\TR\????\X.xlsx`) — this is a Windows-side argv encoding problem, not a bug in the scripts.
+
+**Workaround**: use `--config FILE` mode. Write all parameters (including paths) to a UTF-8 JSON file at an ASCII-only location (e.g. `C:\Temp\config.json`), then call:
+
+```bash
+python3 scripts/inspect_config_tables.py --config C:\Temp\config.json
+```
+
+`SKILL.md` documents this in full and AI assistants follow it automatically once the skill is installed. The scripts also detect `?` in paths and surface a clear error pointing at this fix.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

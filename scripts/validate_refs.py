@@ -43,6 +43,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# Sibling module — relies on the script's directory being on sys.path[0].
+from _config_loader import check_paths, load_config_file, merge_into_args
+
 
 SUPPORTED = {".xlsx", ".xlsm"}
 
@@ -335,7 +338,10 @@ def parse_meta_rows(value: str) -> list[int]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate cross-table references in a workbook.")
-    parser.add_argument("--workbook", type=Path, required=True, help="Path to .xlsx / .xlsm to validate.")
+    parser.add_argument(
+        "--workbook", type=Path, default=None,
+        help="Path to .xlsx / .xlsm to validate. (Required, but can also be provided via --config.)",
+    )
     parser.add_argument(
         "--field-row", type=int, default=None,
         help="Default 1-based field row applied to all sheets. Omit to auto-detect per sheet "
@@ -355,17 +361,35 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output", type=Path, help="Write the report to a file.")
     parser.add_argument("--format", choices=("md", "json"), default="md")
-    return parser.parse_args()
+    parser.add_argument(
+        "--config", type=Path, default=None,
+        help="Read all params from a UTF-8 JSON config file (use this on Windows when "
+             "paths contain non-ASCII characters).",
+    )
+    args = parser.parse_args()
+    cfg = load_config_file(args.config)
+    merge_into_args(
+        args, cfg,
+        path_fields=("workbook", "schema", "output"),
+        list_fields=("meta_rows",),
+    )
+    check_paths(args, ("workbook", "schema", "output", "config"))
+    return args
 
 
 def main() -> None:
     args = parse_args()
+    if args.workbook is None:
+        raise SystemExit("--workbook is required (pass it on the CLI or include it in --config).")
     if not args.workbook.exists():
         raise SystemExit(f"Workbook not found: {args.workbook}")
     if args.workbook.suffix.lower() not in SUPPORTED:
         raise SystemExit(f"Unsupported workbook type: {args.workbook.suffix}")
 
-    default_meta_rows = parse_meta_rows(args.meta_rows)
+    if isinstance(args.meta_rows, str):
+        default_meta_rows = parse_meta_rows(args.meta_rows)
+    else:
+        default_meta_rows = [int(v) for v in args.meta_rows] if args.meta_rows else []
     schema = load_schema(args.schema) if args.schema else {"field_rows": {}, "meta_rows": {}, "refs": []}
 
     load_workbook = load_openpyxl()
