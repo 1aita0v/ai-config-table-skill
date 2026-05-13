@@ -143,6 +143,48 @@ description: >-
 >
 > **AI**: 好,我可以直接覆盖。不过我顺手做了个副本并不耽误时间,你愿意瞄一眼总结再覆盖最稳。这样吧:我**同时**做两件事 —— 生成副本 + 给你一句话总结。你说 OK 我立刻覆盖,说"不对"我也马上回滚。30 秒,不绕路。
 
+### 样例 6 — 用户说不清哪张表(用 find_table)
+
+> **用户**: 帮我看下世界 boss 那张表的奖励配置
+>
+> **AI**: *(后台跑 inspect + find_table,关键词 "boss,世界,WorldBoss")*
+>
+> 你项目里跟"世界 boss"相关的我搜到 3 张:
+>
+> 1. `WorldHunting.xlsx` → `BossHunting` sheet(字段含 `BossID / RewardMax#1.PropID / RewardMax#1.Value`,看起来是主目标)
+> 2. `Adventure.xlsx` → `WorldBoss` sheet(字段含 `Difficulty / Reward`)
+> 3. `Activity.xlsx` → `Boss` sheet(只匹配关键词 "boss",可能是普通 boss 不是世界 boss)
+>
+> 你说的是 1 还是 2?或者你直接告诉我文件名 / 路径。
+>
+> **用户**: 1
+>
+> **AI**: 收到。`WorldHunting.xlsx` 的 `BossHunting` sheet,奖励字段是 `RewardMax#1` / `#2` / ...(数组形式)。你要看几条样本,还是直接说要改什么?
+
+### 样例 7 — 字段不懂含义(5 个证据来源 + 带证据问)
+
+> **用户**: 帮我把所有 `ConditionExtra` 是 `1,1` 的改成 `0,0`
+>
+> **AI**: *(查 sample / meta_rows / 跨 sheet / 项目记忆)*
+>
+> `ConditionExtra` 这个字段我看了证据:
+>
+> - **5 行样本**: 值都是 `1,1` 或 `0,0` 这种两位整数对
+> - **第 4 行备注** 写的是"触发参数"
+> - **同名字段在 Buff 表里也有**,那张表注释更清楚:"层数堆叠模式: 1,1=堆叠累计 / 0,0=独立重置"
+> - **`.ai-config-table/` 项目记忆**: 没记过这个字段
+>
+> 我推测这个字段是"层数堆叠模式",`1,1`=堆叠 / `0,0`=独立重置。
+>
+> 你确认下:
+> - 我的推测对吗?
+> - "所有 `1,1` 改成 `0,0`"是把所有堆叠模式都改成独立重置?这样改影响范围比较大,你确认是想全改?
+> - 改完要不要顺手在 `.ai-config-table/` 记一下这个字段的含义,下次同项目我直接懂?
+>
+> **用户**: 推测对,但只改 SkillID 在 1000-2000 范围的,其他不动。记下字段含义。
+>
+> **AI**: 收到。范围限定 + 字段含义入档。*(继续走 4 段差集 → dry-run → 生成 → ...)*
+
 ### Dialogue (English flavor)
 
 > **User**: Change item 10003's quality to 3 in my config.
@@ -238,6 +280,67 @@ Mac / Linux 默认 UTF-8,中文路径直接走 argv 也没问题,不强制用 `-
 
 副本就是交付物,最后那一步用户自己关闭闭环 —— 这是用户的安全网,不是要绕过的障碍。
 
+## 用户给的信息模糊怎么办
+
+非常常见。两类:**说不清哪张表** 和 **字段不懂含义**。两个都不许直接猜,也不要直接抛回去问"哪张表?" / "这字段啥意思?" —— 用户嫌烦,你显得没用。
+
+**统一原则:先用你手里的数据找证据,带着证据再问**。
+
+### A. 用户说不清哪张表(例:"去世界 boss"、"那张冒险表"、"商店那个")
+
+3 步:
+
+1. **inventory grep**:用 `scripts/find_table.py` 跑关键词搜索(对照 sheet 名 / file 名 / 字段名 / 样本值,自动排序):
+
+   ```bash
+   # 先 inspect 拿 JSON 清单(如果还没跑过)
+   python3 scripts/inspect_config_tables.py --root /path/to/config --format json --output /tmp/inv.json
+   # 再搜
+   python3 scripts/find_table.py --inventory /tmp/inv.json --keyword "boss,世界,WorldBoss"
+   ```
+
+   输出按相关度列前 5 个候选,带"为什么匹配上的"。
+
+2. **看项目记忆**:`<root>/.ai-config-table/` 里有没有用户之前教过的"这个项目的 X 在哪儿"。
+
+3. **带候选列表问** —— 不要空问"哪张表",要列具体候选:
+
+   > 我在你项目里搜到 3 张可能相关:
+   > - `WorldHunting.xlsx` → `BossHunting` sheet(字段含 `BossID / IsWorldBoss`)
+   > - `Adventure.xlsx` → `WorldBoss` sheet(字段含 `Difficulty / Reward`)
+   > - `Activity.xlsx` → `Boss` sheet
+   >
+   > 你说的是哪张?或者直接告诉我文件路径。
+
+### B. 字段不懂含义(例:"ConditionExtra"、"Coefficient"、"AssetCode")
+
+5 个证据来源,**挨个查再问**:
+
+| 证据 | 怎么用 |
+|---|---|
+| **inspect sample** | 拉 3-5 行实际值。`1,1` / `0,0`?百分数?ResId 引用?值就在暗示含义 |
+| **meta_rows(注释行)** | 多行表头里通常有一行写策划注释。`field_row=2 meta_rows=[1,3,4]` 的 4 就是 |
+| **跨 sheet 同名字段** | 这个字段在其他 sheet 是不是也出现过?那张表的样本 / 注释清不清楚 |
+| **`.ai-config-table/learned-patterns.md`** | 项目记忆里有没有人记过这个字段 |
+| **RPG 反模式 1**(`references/rpg-config-patterns.md`) | 是不是 ID 段字段?有没有独立业务字段才是真相 |
+
+**带证据问** —— 不要空问"这字段啥意思":
+
+> `ConditionExtra` 我看了 5 行样本,值都是 `1,1` / `0,0` 这种两位整数对。第 4 行备注写"触发参数"。看着像 `(参数1, 参数2)` 格式,但具体含义没明确文档。
+>
+> 你能确认:
+> - 这是 (参数1, 参数2) 还是单值?
+> - 1 和 0 分别什么意思?
+> - 我这次要配的新条目,应该填什么?
+
+具体、有锚点、可直接答 —— 比"这个字段啥意思?"好用 10 倍。
+
+### 学到了就入档
+
+用户答了之后,**主动问"要不要存档?"**。用户说存就跑 `scripts/learn.py`(参见下面"项目记忆"),下次同项目不再问。
+
+---
+
 ## 项目记忆 (.ai-config-table/) —— 越用越聪明的关键
 
 每个项目的配置目录下可以有一个 `.ai-config-table/` 子目录,**accumulating** 这个项目特有的规律(命名约定 / 跨表引用 / ID 段语义 / 备注列约定 等)。
@@ -303,7 +406,7 @@ python3 scripts/learn.py \
    ```
 3. **读 inventory.md** —— 知道表里都有什么 sheet、每张 sheet 的字段名。**留意 HINT 提示**(`row 1 像中文 / row 2 像英文字段`、`row N 像注释`)。如果开头有 **`## Project Memory`** 段,**先读它**,把已知规律应用到本任务,不要重复问用户已经记录过的事。
 4. **读 patch.json 骨架** —— 它已经按 per-sheet 自动检测填好了 `field_row / meta_rows / data_start_row / key_field / _fields_available`。**不要凭印象写 schema,在骨架上填 `updates` / `appends` 就行**。
-5. **跟用户用大白话**复述你打算改什么(具体到 sheet、key、字段、新旧值),拿到确认。**复述时主动应用 `references/rpg-config-patterns.md` 里的 5 条心智模型**(下文)。
+5. **按任务大小做差集**,拿到确认。**差集详细程度跟任务复杂度匹配,见下面 "差集详细程度按任务大小分级"**。复述时主动应用 `references/rpg-config-patterns.md` 里的 5 条心智模型。
 6. **patch dry-run**:
    ```bash
    python3 scripts/patch_xlsx.py --source X.xlsx --output X_candidate.xlsx --patch patch.json --dry-run
@@ -338,12 +441,53 @@ python3 scripts/learn.py \
 
 ## 按任务复杂度走不同流程
 
-| 任务 | 跑哪几步 |
+简单任务别上完整流程,**差集详细程度也跟着任务大小走** —— 不要 1 格改也搞 4 段汇报。
+
+| 任务 | 跑哪几步 | 差集格式 |
+|---|---|---|
+| 查某个字段是啥 | inspect → 回答 | 不用差集 |
+| 改一行某个值,无跨表 | inspect → 1 句话总结 → dry-run → 用户 OK → 生成 → diff | **1 句话**:"改 X 行 Y 字段 Z→W,其他不动" |
+| 加 1-5 行 | inspect → **4 段差集** → dry-run → 生成 → diff → validate_refs | **4 段差集**(见下) |
+| 10+ 行 / 新 ID / 跨表 / 公式 / 表结构 | 完整 7 步 + spec | **4 段差集 + spec 兜底** |
+
+### 差集详细程度按任务大小分级
+
+**简单任务(改 1 格)** —— 1 句话:
+
+> 我打算改 Item 表第 7 行(`10003 Potion`)的品质,2 → 3,其他不动。预览一下?
+
+**中等任务(加 1-5 行 / 涉及 2 张表)→ 4 段差集**:
+
+| 段 | 内容 |
 |---|---|
-| 查某个字段是啥 | inspect → 回答 |
-| 改一行某个值,无跨表 | inspect → patch dry-run + 生成 → diff |
-| 加 1-5 行 | inspect → 一句话总结改动 → patch → diff → 跑 `validate_refs.py` |
-| 10+ 行 / 新 ID / 跨表 / 公式 / 表结构 | 完整 7 步(下) |
+| **要改的** | 具体 sheet / key / field / 新旧值 |
+| **不动的** | 显式列出"我刻意没动的相邻字段 / 相邻表",兜底用户即时纠正 |
+| **请确认的** | 用户没明示但任务里隐含决策的事(附属表是否同步?备注写什么?口径有歧义?) |
+| **我假设的** | AI 用经验补的默认值,写出来供用户纠错 |
+
+样例:
+
+> 动手前我列下计划:
+>
+> **要改**: Item 表加 3 个新道具(ID 10020-10022),Name / Desc / Icon / Quality 按你给的填,LocKey 按 `ITEM_<id>_NAME` 生成。LocText 表对应加 3 条 (LocKey / TextCN / TextEN)。
+>
+> **不动**: Item 表其他行;Reward / Drop 表的现有关联;图标资源表(没说要新增图标资源)。
+>
+> **请你确认**:
+> - 图标用现有还是要让我列出来你挑?
+> - 备注列写什么?(每行一句改动来源)
+>
+> **我假设的**:
+> - 品质都是 1(没特别说就默认起始品质)
+> - LocText 表 TextEN 我用音译,后续翻译同学再改
+>
+> 这样对吗?
+
+**复杂任务(10+ 行 / schema 变更 / 跨多表)→ 4 段差集 + spec 文档**:
+
+完整 spec 用 `references/change-spec-template.md` 模板(AI 内部走清单,给用户看一段话总结)。4 段差集仍然要做,spec 是兜底用的内部文档。
+
+**关键**:**4 段差集只用在"加 1-5 行"以上的任务**。改一格不要搞 4 段,显得啰嗦。
 
 ## 完整流程(中 / 高风险任务)
 
