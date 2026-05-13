@@ -36,6 +36,20 @@ from _config_loader import check_paths, load_config_file, merge_into_args
 
 SUPPORTED = {".xlsx", ".xlsm", ".csv", ".tsv", ".json"}
 
+# Files we never want to scan even if they have a supported extension.
+#   ~$X.xlsx       Excel / WPS lock file (marker that someone has X.xlsx open)
+#   .~lock.X.xlsx# LibreOffice / Calc lock marker
+#   .DS_Store      macOS Finder metadata
+#   Thumbs.db      Windows Explorer thumbnail cache
+#   ._X            macOS resource-fork sidecar (when zipping across OSes)
+DEFAULT_IGNORE_PATTERNS = (
+    "~$*",
+    ".~lock.*",
+    ".DS_Store",
+    "Thumbs.db",
+    "._*",
+)
+
 KEY_EXACT = {"id", "key", "编号", "主键", "uid"}
 KEY_SUFFIX_RE = re.compile(r"_(id|key)$", re.IGNORECASE)
 KEY_CAMEL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*(ID|Id|Key)$")
@@ -205,20 +219,30 @@ def is_patch_shaped_json(payload: Any) -> bool:
 
 
 def iter_config_files(root: Path, max_files: int, ignore: list[str]) -> Iterable[Path]:
+    # Always skip lock files and OS metadata, plus whatever the user asked.
+    all_patterns = tuple(DEFAULT_IGNORE_PATTERNS) + tuple(ignore)
     if root.is_file():
-        if root.suffix.lower() in SUPPORTED:
+        if root.suffix.lower() in SUPPORTED and not _matches_any(root, all_patterns):
             yield root
         return
     count = 0
     for path in sorted(root.rglob("*")):
         if not (path.is_file() and path.suffix.lower() in SUPPORTED):
             continue
-        if any(path.match(pattern) or pattern in path.name for pattern in ignore):
+        if _matches_any(path, all_patterns):
             continue
         yield path
         count += 1
         if count >= max_files:
             return
+
+
+def _matches_any(path: Path, patterns: tuple[str, ...]) -> bool:
+    name = path.name
+    for pattern in patterns:
+        if Path(name).match(pattern) or pattern in name:
+            return True
+    return False
 
 
 def decode_with_fallback(data: bytes, prefer: str) -> tuple[str, str]:

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import difflib
 import json
 import platform
 import re
@@ -27,6 +28,49 @@ from typing import Any
 
 # Sibling module — relies on the script's directory being on sys.path[0].
 from _config_loader import check_paths, load_config_file, merge_into_args
+
+
+# Windows old-API path limit. Files written under longer paths can be silently
+# created but unreadable by Excel / Explorer. Warn early.
+LONG_PATH_LIMIT_HARD = 260
+LONG_PATH_LIMIT_WARN = 240
+
+
+def excel_lock_marker(path: Path) -> Path:
+    """Path to the `~$X` lock marker Excel / WPS write next to an open workbook."""
+    return path.with_name("~$" + path.name)
+
+
+def assert_not_excel_locked(path: Path, label: str) -> None:
+    """If a workbook is currently open in Excel / WPS, refuse and explain."""
+    marker = excel_lock_marker(path)
+    if marker.exists():
+        raise SystemExit(
+            f"{label} appears to be open in Excel / WPS: a lock marker exists at\n"
+            f"  {marker}\n"
+            f"Close the workbook in Excel / WPS first, then re-run."
+        )
+
+
+def warn_long_path(path: Path, label: str) -> None:
+    text = str(path)
+    if len(text) > LONG_PATH_LIMIT_WARN:
+        msg = (
+            f"[notice] --{label} is {len(text)} characters long. Older Windows "
+            f"versions (or Excel) may refuse to open paths longer than "
+            f"{LONG_PATH_LIMIT_HARD} chars. Consider a shorter path."
+        )
+        sys.stderr.write(msg + "\n")
+
+
+def suggest(name: str, candidates: list[str], n: int = 3) -> str:
+    """Format a 'did you mean ...?' suffix for an error message."""
+    if not candidates:
+        return ""
+    matches = difflib.get_close_matches(name, candidates, n=n, cutoff=0.6)
+    if not matches:
+        return f"  Available: {', '.join(candidates[:10])}{' ...' if len(candidates) > 10 else ''}"
+    return f"  Did you mean: {', '.join(matches)}?  (All: {', '.join(candidates[:10])}{' ...' if len(candidates) > 10 else ''})"
 
 
 def load_openpyxl():
@@ -187,11 +231,17 @@ def collect_planned_changes(ws, sheet_patch: dict[str, Any]) -> dict[str, Any]:
                 raise SystemExit(f"Sheet {ws.title}: update requires row/col or key/field")
             key = norm(update["key"])
             if key not in key_index:
-                raise SystemExit(f"Key not found in {ws.title}: {key_field}={key}")
+                raise SystemExit(
+                    f"Key not found in {ws.title}: {key_field}={key}\n"
+                    f"{suggest(key, sorted(key_index.keys()))}"
+                )
             row = key_index[key]
             field = update["field"]
             if field not in header:
-                raise SystemExit(f"Field not found in {ws.title}: {field}")
+                raise SystemExit(
+                    f"Field not found in {ws.title}: {field}\n"
+                    f"{suggest(field, list(header.keys()))}"
+                )
             col = header[field]
         before = norm(ws.cell(row=row, column=col).value)
         planned_updates.append(
@@ -227,7 +277,10 @@ def collect_planned_changes(ws, sheet_patch: dict[str, Any]) -> dict[str, Any]:
             elif str(field).isdigit() or COL_RE.match(str(field)):
                 col = resolve_col(field)
             else:
-                raise SystemExit(f"Append field not found in {ws.title}: {field}")
+                raise SystemExit(
+                    f"Append field not found in {ws.title}: {field}\n"
+                    f"{suggest(str(field), list(header.keys()))}"
+                )
             cells.append({"col": col, "field": col_to_name.get(col, str(field)), "value": norm(value)})
         planned_appends.append({"row": row_idx, "cells": cells})
 
@@ -286,7 +339,10 @@ def apply_sheet_patch(ws, sheet_patch: dict[str, Any], should_mark: bool) -> dic
             elif str(field).isdigit() or COL_RE.match(str(field)):
                 col = resolve_col(field)
             else:
-                raise SystemExit(f"Append field not found in {ws.title}: {field}")
+                raise SystemExit(
+                    f"Append field not found in {ws.title}: {field}\n"
+                    f"{suggest(str(field), list(header.keys()))}"
+                )
             cell = ws.cell(row=row_idx, column=col)
             cell.value = value
             if should_mark:
@@ -429,6 +485,13 @@ def main() -> None:
             raise SystemExit(f"--{field} is required (pass it on the CLI or include it in --config).")
     if not args.source.exists():
         raise SystemExit(f"Source not found: {args.source}")
+    # Excel / WPS leaves a `~$name.xlsx` marker when name.xlsx is open. Refuse
+    # to overwrite a candidate that's currently open — saving would silently
+    # fail or corrupt the file.
+    if not args.dry_run:
+        assert_not_excel_locked(args.output, "--output")
+    warn_long_path(args.source, "source")
+    warn_long_path(args.output, "output")
     if args.source.resolve() == args.output.resolve():
         raise SystemExit(
             f"--source and --output must be different files. "
@@ -443,7 +506,10 @@ def main() -> None:
         for sheet_patch in patch.get("sheets", []):
             sheet_name = sheet_patch["sheet"]
             if sheet_name not in wb.sheetnames:
-                raise SystemExit(f"Sheet not found: {sheet_name}")
+                raise SystemExit(
+                    f"Sheet not found: {sheet_name}\n"
+                    f"{suggest(sheet_name, list(wb.sheetnames))}"
+                )
             plans.append(collect_planned_changes(wb[sheet_name], sheet_patch))
         sys.stdout.write(render_dry_run(plans) + "\n")
         return
@@ -471,7 +537,10 @@ def main() -> None:
         for sheet_patch in patch.get("sheets", []):
             sheet_name = sheet_patch["sheet"]
             if sheet_name not in wb.sheetnames:
-                raise SystemExit(f"Sheet not found: {sheet_name}")
+                raise SystemExit(
+                    f"Sheet not found: {sheet_name}\n"
+                    f"{suggest(sheet_name, list(wb.sheetnames))}"
+                )
             result = apply_sheet_patch(wb[sheet_name], sheet_patch, not args.no_mark)
             result["sheet"] = sheet_name
             summary.append(result)

@@ -238,6 +238,49 @@ Mac / Linux 默认 UTF-8,中文路径直接走 argv 也没问题,不强制用 `-
 
 副本就是交付物,最后那一步用户自己关闭闭环 —— 这是用户的安全网,不是要绕过的障碍。
 
+## 不确定怎么做?照这个固定流程走(给所有 agent 的最低保障)
+
+如果你拿不准这次任务该怎么做、或你是一个能力一般的 agent —— **不要靠判断**,照下面顺序一步一步走,每步都能跑出来,然后看上一步输出再决定下一步:
+
+1. **问用户三件事**(表在哪 / 什么格式 / 表头几行),或直接拿到文件夹路径。
+2. **跑 inspect + 生成 patch 骨架**(一条命令同时拿 inventory 和骨架):
+   ```bash
+   python3 scripts/inspect_config_tables.py --root <用户给的路径> --output inventory.md --patch-template patch.json
+   ```
+3. **读 inventory.md** —— 知道表里都有什么 sheet、每张 sheet 的字段名。**留意 HINT 提示**(`row 1 像中文 / row 2 像英文字段`、`row N 像注释`)。
+4. **读 patch.json 骨架** —— 它已经按 per-sheet 自动检测填好了 `field_row / meta_rows / data_start_row / key_field / _fields_available`。**不要凭印象写 schema,在骨架上填 `updates` / `appends` 就行**。
+5. **跟用户用大白话**复述你打算改什么(具体到 sheet、key、字段、新旧值),拿到确认。**复述时主动应用 `references/rpg-config-patterns.md` 里的 5 条心智模型**(下文)。
+6. **patch dry-run**:
+   ```bash
+   python3 scripts/patch_xlsx.py --source X.xlsx --output X_candidate.xlsx --patch patch.json --dry-run
+   ```
+   读 `Updates / Notes / Appends` 三段输出,拿出来给用户看。
+7. **patch 实际生成副本**(去掉 `--dry-run`)。脚本会自动:`--output` 已存在加时间戳;源==输出立即报错;Excel 把候选打开着也立即报错并告诉你关闭。
+8. **diff 对比**:
+   ```bash
+   python3 scripts/diff_config_tables.py --source X.xlsx --candidate X_candidate.xlsx --output diff.md
+   ```
+9. **validate_refs 跨表对账**(默认 per-sheet auto-detect,不用传参):
+   ```bash
+   python3 scripts/validate_refs.py --workbook X_candidate.xlsx
+   ```
+   **exit 非 0 = 有 orphan,先解决再覆盖**。
+10. **把副本路径告诉用户**,等明确"覆盖"指令。**沙盒拒写就不绕**,把路径交给用户手动操作(参见上面 *沙盒不让你覆盖原表怎么办*)。
+
+**任何一步报错,先读错误信息**:脚本现在会给出"Did you mean …?" 的建议(field / sheet / key 拼错时),`?` 路径会提示用 `--config`,Excel 锁文件会提示关闭工作簿。**不要尝试绕过错误,按错误信息修**。
+
+## RPG 配表通用心智模型(进入第 5 步之前心里过一遍)
+
+跟用户复述改动前,**心里过一遍** `references/rpg-config-patterns.md` 里 5 条通用 RPG 配表反模式 / 方法。具体到当前任务,只在该条适用时主动提:
+
+1. **不要从 ID 段推业务语义** —— 用户说"按 ID 段过滤 X 类型"时,跟他说"我用 Type 字段过滤更稳"
+2. **业务分类查 Desc 不查 I18N** —— 用户说"按中文名找内部分类标签",提醒标签在 Desc / Type 字段
+3. **摸底必扫系统下所有 sheet 字段** —— 用户问"X 系统有没有 Y 字段",别看 sheet 名,grep 所有 sheet 列头
+4. **配新表前先盲配 3-5 条已有的对答案** —— 用户要"参照 N 条配 M 条",自己先盲建 3-5 条对比
+5. **表结构决策原则** —— 用户要新建表 / 加字段,先回答 3 个决策问题(扩展? ID 引用? 旧字段兼容?)
+
+**每个项目的字段命名 / 表结构 / 命名约定不同** —— 这 5 条只给"思考方向",不是标准答案。具体项目用 `references/project-profile-template.md` 建档,覆盖默认假设。
+
 ## 按任务复杂度走不同流程
 
 | 任务 | 跑哪几步 |
@@ -365,7 +408,13 @@ patch JSON 格式参考:[`references/patch-format.md`](references/patch-format.m
 ## 文件结构
 
 - `scripts/` —— `inspect_config_tables.py`(扫描)、`patch_xlsx.py`(生成副本)、`diff_config_tables.py`(对比)、`validate_refs.py`(跨表引用对账)。
-- `references/` —— AI 内部走流程用的模板和清单(`project-profile`、`change-spec`、`validation-checklist`、`config-reference-playbook`、`data-sources`、`no-data-source-report`、`patch-format`)。**不要丢给用户填表**。
+- `references/` —— AI 看的参考:
+  - `rpg-config-patterns.md` —— **通用 RPG 配表 5 条反模式 / 方法**(复述改动前心里过一遍)
+  - `patch-format.md` —— `patch_xlsx.py` 接受的 JSON 格式(含 `note` 字段)
+  - `data-sources.md` —— 数据源选择路由
+  - `no-data-source-report.md` —— 找不到数据源时的失败模板
+  - 以下 3 个是 **AI 内部** 走流程用,**不要丢给用户填表**:
+    `project-profile-template.md`、`change-spec-template.md`、`validation-checklist.md`、`config-reference-playbook.md`
 - `examples/` —— 样例工作簿构建器 + 完整 walkthrough。
 - `agents/openai.yaml` —— Codex / OpenAI 风格 skill 元数据。
 
