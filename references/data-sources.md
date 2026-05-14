@@ -36,7 +36,8 @@ python3 scripts/inspect_config_tables.py --root path/to/config --format json --o
 - 导出路径
 - 导出时间
 - 来源项目 / 表名
-- 公式 / 样式是否保留
+- 公式处理方式(清公式 / 粘贴为值 / 沿用公式;若沿用,记录重算方式和公式结果验算方法)
+- 样式是否保留
 - 是否包含隐藏列 / sheet
 
 ## 云表格

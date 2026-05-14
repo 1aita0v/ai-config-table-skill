@@ -22,19 +22,20 @@
 1. AI 把原文件覆盖了,下游构建挂掉
 2. AI 把列名认错,某一行被静默写坏,几天后才被发现
 3. 关联表(文案、图标)忘了同步,运行时显示空白或断言
+4. 表里临时公式没清,追加行 / 扩行数后公式算错但没人发现
 
-这个 skill 把 AI 套进一条 **扫描 → 预览 → 副本 → 对比 → 用户确认** 的固定流程,让"AI 干活、人拍板"成为默认行为,而不是靠 prompt 提醒。
+这个 skill 把 AI 套进一条 **扫描 → 公式闸门 → 预览 → 副本 → 对比 → 用户确认** 的固定流程,让"AI 干活、人拍板"成为默认行为,而不是靠 prompt 提醒。
 
 ## 工作流
 
 ```
-inspect        →  patch (dry-run)  →  patch          →  diff             →  validate_refs
-扫描配表目录      预览将要改的格子      复制源、改副本     对比源 vs 副本     跨表外键(orphan)校验
-出 inventory     不写盘             改动的格子标黄     按 sheet 列改动    候选发布前最后兜底
-+ patch 骨架
+inspect        →  formula gate     →  patch (dry-run)  →  patch          →  diff             →  validate_refs
+扫描配表目录      有公式先确认处理      预览将要改的格子      复制源、改副本     对比源 vs 副本     跨表外键(orphan)校验
+出 inventory     转值或明确沿用        不写盘              改动的格子标黄     按 sheet 列改动    候选发布前最后兜底
++ patch 骨架      沿用时验算结果
 ```
 
-每一步都是一个独立 Python 脚本,失败原子化(出错就退出,不留半截产物)。AI 跟着 `SKILL.md` 的工作流串这五步,用户在"实际生成副本"和"覆盖回去"两个节点参与决策。
+每一步都是一个独立 Python 脚本,失败原子化(出错就退出,不留半截产物)。AI 跟着 `SKILL.md` 的工作流串起来,用户在"实际生成副本"和"覆盖回去"两个节点参与决策。
 
 ## Quickstart(5 分钟在本地试一遍)
 
@@ -46,7 +47,7 @@ pip install openpyxl
 # 生成样例工作簿(模拟典型游戏配表:多行表头 + 文案表 + 奖励表)
 python3 examples/build_sample.py
 
-# 跑完整 5 步流程
+# 跑完整流程
 python3 scripts/inspect_config_tables.py --root examples/sample.xlsx --format md --output inventory.md --patch-template patch.json
 python3 scripts/patch_xlsx.py     --source examples/sample.xlsx --output examples/sample_candidate.xlsx --patch examples/sample-patch.json --dry-run
 python3 scripts/patch_xlsx.py     --source examples/sample.xlsx --output examples/sample_candidate.xlsx --patch examples/sample-patch.json
@@ -82,12 +83,12 @@ git clone https://github.com/1aita0v/ai-config-table-skill.git ~/ai-config-table
 | [`SKILL.md`](SKILL.md) | AI 跟着走的工作流主文档:决策点、对话样例、差集分级、平台兼容、项目记忆 |
 | [`scripts/inspect_config_tables.py`](scripts/inspect_config_tables.py) | 扫描配表目录,生成 `inventory.md` 和 `patch.json` 骨架 |
 | [`scripts/patch_xlsx.py`](scripts/patch_xlsx.py) | 复制源到副本,按 patch JSON 改动并把改过的格子标黄;支持 `--dry-run` |
-| [`scripts/diff_config_tables.py`](scripts/diff_config_tables.py) | 对比源和副本,按 sheet 列出值差异和公式变化 |
+| [`scripts/diff_config_tables.py`](scripts/diff_config_tables.py) | 对比源和副本,按 sheet 列出值差异和公式变化;带公式流程可加 `--compare-formula-results` 对比重算后的缓存结果 |
 | [`scripts/validate_refs.py`](scripts/validate_refs.py) | 跨表外键(orphan)校验,自动检测 `Item.LocKey → LocText.LocKey` 这类引用 |
 | [`scripts/find_table.py`](scripts/find_table.py) | 按关键词在 inventory 里搜 sheet 和字段(用户描述模糊时定位) |
 | [`scripts/learn.py`](scripts/learn.py) | 把用户确认过的字段含义、约定写入 `<config-root>/.ai-config-table/` 项目记忆 |
 | [`references/`](references/) | AI 内部走流程时引用的模板和清单(patch JSON 格式、字段含义证据来源、RPG 配表心智模型、发布前 checklist 等) |
-| [`examples/walkthrough.md`](examples/walkthrough.md) | 5 步流程的完整 walkthrough,跑在自动生成的样例工作簿上 |
+| [`examples/walkthrough.md`](examples/walkthrough.md) | 完整 walkthrough,跑在自动生成的样例工作簿上 |
 | [`agents/openai.yaml`](agents/openai.yaml) | Codex / OpenAI 风格 agent 元数据(skill 激活配置) |
 
 ## 兼容性

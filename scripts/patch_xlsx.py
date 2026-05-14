@@ -89,6 +89,7 @@ def load_openpyxl():
 load_workbook, Font, PatternFill, column_index_from_string, get_column_letter = load_openpyxl()
 MARK_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 COL_RE = re.compile(r"^[A-Z]{1,3}$")
+FORMULA_ABORT_PREVIEW = 20
 
 # Header names treated as the row-level note / comment column. First match wins.
 NOTE_COLUMN_NAMES = ("备注", "注释", "Note", "Notes", "Comment", "Comments", "Remark", "Remarks")
@@ -122,6 +123,74 @@ def norm(value: Any) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+def one_line(value: Any, limit: int = 120) -> str:
+    text = norm(value).replace("\n", "\\n")
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
+
+
+def cell_has_formula(cell) -> bool:
+    value = cell.value
+    return getattr(cell, "data_type", None) == "f" or (isinstance(value, str) and value.startswith("="))
+
+
+def collect_formula_cells(wb, max_preview: int = FORMULA_ABORT_PREVIEW) -> dict[str, Any]:
+    total = 0
+    preview: list[dict[str, str]] = []
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                if not cell_has_formula(cell):
+                    continue
+                total += 1
+                if len(preview) < max_preview:
+                    preview.append(
+                        {
+                            "sheet": ws.title,
+                            "cell": cell.coordinate,
+                            "formula": one_line(cell.value),
+                        }
+                    )
+    return {"count": total, "preview": preview}
+
+
+def format_formula_preview(formulas: dict[str, Any]) -> list[str]:
+    lines = [
+        "Formula preview:",
+    ]
+    for item in formulas["preview"]:
+        lines.append(f"  {item['sheet']}!{item['cell']}: {item['formula']}")
+    hidden = formulas["count"] - len(formulas["preview"])
+    if hidden > 0:
+        lines.append(f"  ... {hidden} more formula cell(s)")
+    return lines
+
+
+def assert_formula_free_workbook(wb, source: Path) -> None:
+    formulas = collect_formula_cells(wb)
+    if formulas["count"] == 0:
+        return
+    lines = [
+        f"Source workbook contains {formulas['count']} formula cell(s): {source}",
+        "Before patching config tables, ask the user how to handle formulas: clear/paste values, export a formula-free file, or explicitly preserve formulas with --allow-formulas.",
+        "Why: formulas can calculate incorrectly after appending rows, and openpyxl cannot recalculate them.",
+        *format_formula_preview(formulas),
+    ]
+    raise SystemExit("\n".join(lines))
+
+
+def render_formula_override_warning(formulas: dict[str, Any], source: Path) -> list[str]:
+    if formulas["count"] == 0:
+        return []
+    return [
+        f"WARNING: --allow-formulas is set for {source}.",
+        f"Source workbook still contains {formulas['count']} formula cell(s).",
+        "Use this only when the user explicitly wants formulas preserved, accepts Excel/WPS recalculation risk, and has defined the expected formula results.",
+        *format_formula_preview(formulas),
+    ]
 
 
 def resolve_col(col: str | int) -> int:
@@ -359,8 +428,15 @@ def format_col(col: int, field: str | None) -> str:
     return str(col)
 
 
-def render_dry_run(plans: list[dict[str, Any]]) -> str:
+def render_dry_run(
+    plans: list[dict[str, Any]],
+    formula_warning: dict[str, Any] | None = None,
+    source: Path | None = None,
+) -> str:
     lines = ["# Patch Dry Run", ""]
+    if formula_warning and formula_warning["count"] and source:
+        lines.extend(render_formula_override_warning(formula_warning, source))
+        lines.append("")
     total_updates = total_appends = total_notes = 0
     for plan in plans:
         lines.append(f"## Sheet: {plan['sheet']}")
@@ -465,6 +541,12 @@ def parse_args() -> argparse.Namespace:
         help="Print planned changes without writing the output file.",
     )
     parser.add_argument(
+        "--allow-formulas",
+        action="store_true",
+        help="Advanced override: patch even when the source workbook contains formulas. "
+             "Use only after explicit user approval.",
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         default=None,
@@ -507,17 +589,25 @@ def main() -> None:
 
     if args.dry_run:
         wb = load_workbook(args.source, data_only=False, keep_vba=args.source.suffix.lower() == ".xlsm")
-        plans = []
-        for sheet_patch in patch.get("sheets", []):
-            sheet_name = sheet_patch["sheet"]
-            if sheet_name not in wb.sheetnames:
-                raise SystemExit(
-                    f"Sheet not found: {sheet_name}\n"
-                    f"{suggest(sheet_name, list(wb.sheetnames))}"
-                )
-            plans.append(collect_planned_changes(wb[sheet_name], sheet_patch))
-        sys.stdout.write(render_dry_run(plans) + "\n")
-        return
+        try:
+            formula_warning = None
+            if not args.allow_formulas:
+                assert_formula_free_workbook(wb, args.source)
+            else:
+                formula_warning = collect_formula_cells(wb)
+            plans = []
+            for sheet_patch in patch.get("sheets", []):
+                sheet_name = sheet_patch["sheet"]
+                if sheet_name not in wb.sheetnames:
+                    raise SystemExit(
+                        f"Sheet not found: {sheet_name}\n"
+                        f"{suggest(sheet_name, list(wb.sheetnames))}"
+                    )
+                plans.append(collect_planned_changes(wb[sheet_name], sheet_patch))
+            sys.stdout.write(render_dry_run(plans, formula_warning, args.source) + "\n")
+            return
+        finally:
+            wb.close()
 
     # Validate against the source workbook BEFORE copying it to --output, so
     # bad sheet / key / field surfaces a friendly SystemExit (matching dry-run)
@@ -525,15 +615,22 @@ def main() -> None:
     wb_validate = load_workbook(
         args.source, data_only=False, keep_vba=args.source.suffix.lower() == ".xlsm",
     )
-    for sheet_patch in patch.get("sheets", []):
-        sheet_name = sheet_patch["sheet"]
-        if sheet_name not in wb_validate.sheetnames:
-            raise SystemExit(
-                f"Sheet not found: {sheet_name}\n"
-                f"{suggest(sheet_name, list(wb_validate.sheetnames))}"
-            )
-        collect_planned_changes(wb_validate[sheet_name], sheet_patch)
-    wb_validate.close()
+    formula_warning = None
+    try:
+        if not args.allow_formulas:
+            assert_formula_free_workbook(wb_validate, args.source)
+        else:
+            formula_warning = collect_formula_cells(wb_validate)
+        for sheet_patch in patch.get("sheets", []):
+            sheet_name = sheet_patch["sheet"]
+            if sheet_name not in wb_validate.sheetnames:
+                raise SystemExit(
+                    f"Sheet not found: {sheet_name}\n"
+                    f"{suggest(sheet_name, list(wb_validate.sheetnames))}"
+                )
+            collect_planned_changes(wb_validate[sheet_name], sheet_patch)
+    finally:
+        wb_validate.close()
 
     output_path = args.output
     warnings: list[str] = []
@@ -552,6 +649,7 @@ def main() -> None:
     if fallback_warning:
         warnings.append(fallback_warning)
 
+    wb = None
     try:
         wb = load_workbook(output_path, keep_vba=output_path.suffix.lower() == ".xlsm")
         summary = []
@@ -573,6 +671,9 @@ def main() -> None:
         except Exception:
             pass
         raise
+    finally:
+        if wb is not None:
+            wb.close()
 
     report: dict[str, Any] = {
         "output": str(output_path),
@@ -583,6 +684,10 @@ def main() -> None:
         report["warnings"] = warnings
         for w in warnings:
             sys.stderr.write(f"[notice] {w}\n")
+    if formula_warning and formula_warning["count"]:
+        report["formula_warning"] = formula_warning
+        for line in render_formula_override_warning(formula_warning, args.source):
+            sys.stderr.write(f"[notice] {line}\n")
     sys.stdout.write(json.dumps(report, ensure_ascii=False, indent=2))
 
 

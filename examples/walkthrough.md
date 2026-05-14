@@ -1,6 +1,6 @@
 # Walkthrough —— 三条命令跑一遍
 
-完整跑一遍 inspect → patch → diff 的循环,跑在自动生成的样例工作簿上。
+完整跑一遍 inspect → 公式闸门 → patch → diff 的循环,跑在自动生成的样例工作簿上。
 
 样例模拟典型的游戏配表:主表带多行表头(中文 + 英文字段 + 类型 + 注释),加一个文案表 + 奖励表。
 
@@ -44,6 +44,9 @@ python3 scripts/inspect_config_tables.py \
 - Item sheet 标记 `field_row=2 meta_rows=1,3,4 data_start=5`
 - 候选主键:`ItemID`(符合 `驼峰 + ID` 模式)
 - 样本行从第 5 行开始
+- 没有 `FORMULA WARNING`
+
+如果实际项目里看到 `FORMULA WARNING`,先停下问用户怎么处理:复制粘贴为值、导出无公式版本,或明确沿用公式。沿用公式时,候选重算后要用 `diff_config_tables.py --compare-formula-results` 校验公式结果。
 
 注意:Item sheet 有 4 行表头,另两张没有。实际项目里通常按"表头模式分组"分别跑 inspect,或接受 LocText 和 Reward 在 `field-row 2` 下显示次优样本。这是已知限制 —— 同一次 inspect 适用于同样表头模式的表集合。
 

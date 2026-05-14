@@ -6,6 +6,11 @@ Compares cell values by default. Optionally compares merged-cell layouts with
 formatting, embedded charts) are NOT compared — see validation-checklist.md for
 manual checks.
 
+When formula-bearing workbooks are intentionally allowed, use
+--compare-formula-results after Excel / WPS / the project exporter recalculates
+the candidate. This compares cached formula results (data_only=True); openpyxl
+does not calculate formulas itself.
+
 If the cell scan hits --max-cells, the report flags the diff as truncated
 prominently at the top so callers don't trust a partial result.
 """
@@ -41,66 +46,142 @@ def norm(value: Any) -> str:
     return str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
-def compare_workbooks(source: Path, candidate: Path, max_cells: int, compare_merges: bool) -> dict[str, Any]:
+def is_formula(value: Any) -> bool:
+    return isinstance(value, str) and value.startswith("=")
+
+
+def compare_workbooks(
+    source: Path,
+    candidate: Path,
+    max_cells: int,
+    compare_merges: bool,
+    compare_formula_results: bool,
+) -> dict[str, Any]:
     load_workbook = load_openpyxl()
     src_wb = load_workbook(source, read_only=True, data_only=False, keep_vba=source.suffix.lower() == ".xlsm")
     cand_wb = load_workbook(candidate, read_only=True, data_only=False, keep_vba=candidate.suffix.lower() == ".xlsm")
-    src_sheets = set(src_wb.sheetnames)
-    cand_sheets = set(cand_wb.sheetnames)
-    result: dict[str, Any] = {
-        "source": str(source),
-        "candidate": str(candidate),
-        "added_sheets": sorted(cand_sheets - src_sheets),
-        "removed_sheets": sorted(src_sheets - cand_sheets),
-        "sheets": [],
-        "truncated": False,
-    }
-    seen_cells = 0
-    for sheet_name in src_wb.sheetnames:
-        if sheet_name not in cand_sheets:
-            continue
-        src = src_wb[sheet_name]
-        cand = cand_wb[sheet_name]
-        max_row = max(src.max_row, cand.max_row)
-        max_col = max(src.max_column, cand.max_column)
-        changes = []
-        formula_changes = []
-        for row in range(1, max_row + 1):
-            for col in range(1, max_col + 1):
-                seen_cells += 1
-                if seen_cells > max_cells:
-                    result["truncated"] = True
+    src_cached_wb = None
+    cand_cached_wb = None
+    try:
+        if compare_formula_results:
+            src_cached_wb = load_workbook(
+                source, read_only=True, data_only=True, keep_vba=source.suffix.lower() == ".xlsm"
+            )
+            cand_cached_wb = load_workbook(
+                candidate, read_only=True, data_only=True, keep_vba=candidate.suffix.lower() == ".xlsm"
+            )
+        src_sheets = set(src_wb.sheetnames)
+        cand_sheets = set(cand_wb.sheetnames)
+        result: dict[str, Any] = {
+            "source": str(source),
+            "candidate": str(candidate),
+            "added_sheets": sorted(cand_sheets - src_sheets),
+            "removed_sheets": sorted(src_sheets - cand_sheets),
+            "sheets": [],
+            "truncated": False,
+            "compare_formula_results": compare_formula_results,
+        }
+        seen_cells = 0
+        for sheet_name in src_wb.sheetnames:
+            if sheet_name not in cand_sheets:
+                continue
+            src = src_wb[sheet_name]
+            cand = cand_wb[sheet_name]
+            src_cached = src_cached_wb[sheet_name] if src_cached_wb and sheet_name in src_cached_wb.sheetnames else None
+            cand_cached = (
+                cand_cached_wb[sheet_name] if cand_cached_wb and sheet_name in cand_cached_wb.sheetnames else None
+            )
+            max_row = max(src.max_row, cand.max_row)
+            max_col = max(src.max_column, cand.max_column)
+            changes = []
+            formula_changes = []
+            formula_result_changes = []
+            missing_formula_results = []
+            for row in range(1, max_row + 1):
+                for col in range(1, max_col + 1):
+                    seen_cells += 1
+                    if seen_cells > max_cells:
+                        result["truncated"] = True
+                        break
+                    left_raw = src.cell(row=row, column=col).value
+                    right_raw = cand.cell(row=row, column=col).value
+                    left = norm(left_raw)
+                    right = norm(right_raw)
+                    left_is_formula = is_formula(left_raw)
+                    right_is_formula = is_formula(right_raw)
+                    if left != right:
+                        change = {"row": row, "col": col, "before": left, "after": right}
+                        changes.append(change)
+                        if left_is_formula or right_is_formula:
+                            formula_changes.append(change)
+                    if compare_formula_results and (left_is_formula or right_is_formula):
+                        left_cached_raw = src_cached.cell(row=row, column=col).value if src_cached else None
+                        right_cached_raw = cand_cached.cell(row=row, column=col).value if cand_cached else None
+                        left_cached = norm(left_cached_raw)
+                        right_cached = norm(right_cached_raw)
+                        formula_result = {
+                            "row": row,
+                            "col": col,
+                            "before": left_cached,
+                            "after": right_cached,
+                            "source_formula": left,
+                            "candidate_formula": right,
+                        }
+                        if left_cached != right_cached:
+                            formula_result_changes.append(formula_result)
+                        if right_is_formula and right_cached_raw is None:
+                            missing_formula_results.append(formula_result)
+                if result["truncated"]:
                     break
-                left = norm(src.cell(row=row, column=col).value)
-                right = norm(cand.cell(row=row, column=col).value)
-                if left != right:
-                    change = {"row": row, "col": col, "before": left, "after": right}
-                    changes.append(change)
-                    if left.startswith("=") or right.startswith("="):
-                        formula_changes.append(change)
+            sheet_entry = {
+                "name": sheet_name,
+                "source_size": {"rows": src.max_row, "cols": src.max_column},
+                "candidate_size": {"rows": cand.max_row, "cols": cand.max_column},
+                "changed_cells": len(changes),
+                "formula_changes": len(formula_changes),
+                "changes_preview": changes[:50],
+                "formula_changes_preview": formula_changes[:20],
+            }
+            if compare_formula_results:
+                sheet_entry["formula_result_changes"] = len(formula_result_changes)
+                sheet_entry["missing_formula_results"] = len(missing_formula_results)
+                sheet_entry["formula_result_changes_preview"] = formula_result_changes[:20]
+                sheet_entry["missing_formula_results_preview"] = missing_formula_results[:20]
+            if compare_merges:
+                # Reload non-read-only to access merged_cells.
+                src_full = load_workbook(
+                    source, read_only=False, data_only=False, keep_vba=source.suffix.lower() == ".xlsm"
+                )
+                cand_full = load_workbook(
+                    candidate, read_only=False, data_only=False, keep_vba=candidate.suffix.lower() == ".xlsm"
+                )
+                try:
+                    src_merges = (
+                        {str(r) for r in src_full[sheet_name].merged_cells.ranges}
+                        if sheet_name in src_full.sheetnames
+                        else set()
+                    )
+                    cand_merges = (
+                        {str(r) for r in cand_full[sheet_name].merged_cells.ranges}
+                        if sheet_name in cand_full.sheetnames
+                        else set()
+                    )
+                    sheet_entry["merge_added"] = sorted(cand_merges - src_merges)
+                    sheet_entry["merge_removed"] = sorted(src_merges - cand_merges)
+                finally:
+                    src_full.close()
+                    cand_full.close()
+            result["sheets"].append(sheet_entry)
             if result["truncated"]:
                 break
-        sheet_entry = {
-            "name": sheet_name,
-            "source_size": {"rows": src.max_row, "cols": src.max_column},
-            "candidate_size": {"rows": cand.max_row, "cols": cand.max_column},
-            "changed_cells": len(changes),
-            "formula_changes": len(formula_changes),
-            "changes_preview": changes[:50],
-            "formula_changes_preview": formula_changes[:20],
-        }
-        if compare_merges:
-            # Reload non-read-only to access merged_cells.
-            src_full = load_workbook(source, read_only=False, data_only=False, keep_vba=source.suffix.lower() == ".xlsm")
-            cand_full = load_workbook(candidate, read_only=False, data_only=False, keep_vba=candidate.suffix.lower() == ".xlsm")
-            src_merges = {str(r) for r in src_full[sheet_name].merged_cells.ranges} if sheet_name in src_full.sheetnames else set()
-            cand_merges = {str(r) for r in cand_full[sheet_name].merged_cells.ranges} if sheet_name in cand_full.sheetnames else set()
-            sheet_entry["merge_added"] = sorted(cand_merges - src_merges)
-            sheet_entry["merge_removed"] = sorted(src_merges - cand_merges)
-        result["sheets"].append(sheet_entry)
-        if result["truncated"]:
-            break
-    return result
+        return result
+    finally:
+        src_wb.close()
+        cand_wb.close()
+        if src_cached_wb:
+            src_cached_wb.close()
+        if cand_cached_wb:
+            cand_cached_wb.close()
 
 
 def workbook_pairs(source: Path, candidate: Path) -> list[tuple[Path, Path]]:
@@ -131,14 +212,27 @@ def render_md(diff: dict[str, Any]) -> str:
         if item["truncated"]:
             lines.append("- **Truncated**: cell scan stopped before completion.")
         lines.append("")
-        lines.append("| Sheet | Changed Cells | Formula Changes | Source Size | Candidate Size |")
-        lines.append("|---|---:|---:|---|---|")
+        if item.get("compare_formula_results"):
+            lines.append(
+                "| Sheet | Changed Cells | Formula Changes | Formula Result Changes | Missing Formula Results | Source Size | Candidate Size |"
+            )
+            lines.append("|---|---:|---:|---:|---:|---|---|")
+        else:
+            lines.append("| Sheet | Changed Cells | Formula Changes | Source Size | Candidate Size |")
+            lines.append("|---|---:|---:|---|---|")
         for sheet in item["sheets"]:
             source_size = f"{sheet['source_size']['rows']}x{sheet['source_size']['cols']}"
             cand_size = f"{sheet['candidate_size']['rows']}x{sheet['candidate_size']['cols']}"
-            lines.append(
-                f"| {sheet['name']} | {sheet['changed_cells']} | {sheet['formula_changes']} | {source_size} | {cand_size} |"
-            )
+            if item.get("compare_formula_results"):
+                lines.append(
+                    f"| {sheet['name']} | {sheet['changed_cells']} | {sheet['formula_changes']} | "
+                    f"{sheet.get('formula_result_changes', 0)} | {sheet.get('missing_formula_results', 0)} | "
+                    f"{source_size} | {cand_size} |"
+                )
+            else:
+                lines.append(
+                    f"| {sheet['name']} | {sheet['changed_cells']} | {sheet['formula_changes']} | {source_size} | {cand_size} |"
+                )
         lines.append("")
         for sheet in item["sheets"]:
             if sheet["changes_preview"]:
@@ -150,6 +244,35 @@ def render_md(diff: dict[str, Any]) -> str:
                     before = change["before"].replace("|", "\\|").replace("\n", "\\n")
                     after = change["after"].replace("|", "\\|").replace("\n", "\\n")
                     lines.append(f"| {change['row']} | {change['col']} | {before} | {after} |")
+                lines.append("")
+            if sheet.get("formula_result_changes_preview"):
+                lines.append(f"### {sheet['name']} Formula Result Changes Preview")
+                lines.append("")
+                lines.append("| Row | Col | Before Cached Result | After Cached Result | Source Formula | Candidate Formula |")
+                lines.append("|---:|---:|---|---|---|---|")
+                for change in sheet["formula_result_changes_preview"]:
+                    before = change["before"].replace("|", "\\|").replace("\n", "\\n")
+                    after = change["after"].replace("|", "\\|").replace("\n", "\\n")
+                    source_formula = change["source_formula"].replace("|", "\\|").replace("\n", "\\n")
+                    candidate_formula = change["candidate_formula"].replace("|", "\\|").replace("\n", "\\n")
+                    lines.append(
+                        f"| {change['row']} | {change['col']} | {before} | {after} | "
+                        f"{source_formula} | {candidate_formula} |"
+                    )
+                lines.append("")
+            if sheet.get("missing_formula_results_preview"):
+                lines.append(f"### {sheet['name']} Missing Formula Cached Results")
+                lines.append("")
+                lines.append(
+                    "- Candidate has formula cells without cached calculated results. "
+                    "Open/recalculate the candidate in Excel/WPS or the project export tool, save it, then rerun diff."
+                )
+                lines.append("")
+                lines.append("| Row | Col | Candidate Formula |")
+                lines.append("|---:|---:|---|")
+                for change in sheet["missing_formula_results_preview"]:
+                    candidate_formula = change["candidate_formula"].replace("|", "\\|").replace("\n", "\\n")
+                    lines.append(f"| {change['row']} | {change['col']} | {candidate_formula} |")
                 lines.append("")
             if sheet.get("merge_added") or sheet.get("merge_removed"):
                 lines.append(f"### {sheet['name']} Merge Changes")
@@ -182,6 +305,11 @@ def parse_args() -> argparse.Namespace:
         help="Also compare merged-cell ranges (slower; reloads workbooks without read_only).",
     )
     parser.add_argument(
+        "--compare-formula-results",
+        action="store_true",
+        help="Also compare cached formula calculation results. Run after Excel/WPS/project tools recalculate the candidate.",
+    )
+    parser.add_argument(
         "--config", type=Path, default=None,
         help="Read all params from a UTF-8 JSON config file (use this on Windows when "
              "paths contain non-ASCII characters).",
@@ -203,7 +331,7 @@ def main() -> None:
     if not args.candidate.exists():
         raise SystemExit(f"Candidate not found: {args.candidate}")
     comparisons = [
-        compare_workbooks(src, cand, args.max_cells, args.compare_merges)
+        compare_workbooks(src, cand, args.max_cells, args.compare_merges, args.compare_formula_results)
         for src, cand in workbook_pairs(args.source, args.candidate)
     ]
     diff = {"comparisons": comparisons}

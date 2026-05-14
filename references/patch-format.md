@@ -124,6 +124,9 @@ python3 scripts/patch_xlsx.py --source a.xlsx --output a_candidate.xlsx --patch 
 ## 安全保护
 
 - 编辑前会先把源工作簿复制到 `--output`。
+- 源工作簿里只要有公式,默认直接拒绝 patch。先让用户决定处理方式:清公式 / 粘贴为值、导出无公式版本,或明确沿用公式。
+- 用户明确要沿用公式时,可加 `--allow-formulas`;dry-run 和输出 JSON 会保留 `formula_warning`,必须复述给用户,并要求候选用 Excel / WPS 或项目工具重算后再发布。
+- 沿用公式的候选重算后,用 `diff_config_tables.py --compare-formula-results` 查看缓存计算结果;`missing_formula_results` 必须为 0,结果必须和用户确认的最终预期一致。
 - `--output` 和 `--source` 是同一路径时,脚本直接报错,提示候选名(脚本绝不在原表上原地编辑)。
 - 已有的输出文件不会被覆盖:默认自动加时间戳(`xxx_20260512_103045.xlsx`);加 `--force` 才覆盖;加 `--strict` 直接报错。
 - 被改的单元格默认标黄(包括 note 写入的备注格),加 `--no-mark` 跳过。

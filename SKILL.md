@@ -39,13 +39,14 @@ description: >-
 
 工作流(inspect → 副本 → diff → 用户确认)本身与语言无关。
 
-## 这个 skill 在做什么(5 步)
+## 这个 skill 在做什么(6 步)
 
 1. **问** —— 表在哪、什么格式、表头几行,不要猜。
 2. **看一遍** —— 只读扫一遍,记下结构。
-3. **想清楚** —— 大改才写下来,小改心里有数即可。
-4. **生成副本** —— 把改动应用在副本上,绝不动原表。
-5. **对比 + 用户确认** —— 把 diff 摆出来,等用户点头。
+3. **公式闸门** —— 源表只要有公式,先停下确认处理方式:转值 / 导出无公式 / 明确沿用公式。
+4. **想清楚** —— 大改才写下来,小改心里有数即可。
+5. **生成副本** —— 把改动应用在副本上,绝不动原表。
+6. **对比 + 用户确认** —— 把 diff 摆出来,等用户点头。
 
 > 给用户的承诺:**原文件在你明确说"覆盖"之前不会被动**。
 
@@ -98,6 +99,38 @@ description: >-
 > 3. The top rows of the sheet — is the very first row the column names, or are there 2-4 rows on top (CN display / EN field / type / comment)? If unsure, point me at the folder, I'll scan first.
 
 如果用户根本没法给数据源 —— 用 `references/no-data-source-report.md` 写一份「找不到数据源」报告,然后**停下**。不要瞎编表名、ID、规则。
+
+## 公式闸门:先确认处理方式
+
+有些人会在配置表里临时加公式。**这不是小风险**:一旦追加行、扩展数组列、调整行数配置,公式范围 / 缓存结果可能不会按预期重算,而 `diff` 只能看到公式文本或单元格值变化,看不出"算错了但公式还在"。
+
+规则:
+
+- Excel / WPS 工作簿里只要检测到公式,默认**不继续 patch**。哪怕公式不在这次目标列,也先停下问用户怎么处理。
+- 告诉用户公式位置示例,让用户选:复制粘贴为值 / 导出无公式版本 / 明确保留并沿用公式。**不要替用户自动清公式**,因为 AI 不知道应该保留计算后的值、留空,还是保留某个中间态。
+- 用户选择清公式后,重新跑 `inspect_config_tables.py`,确认没有 `FORMULA WARNING`,再继续 dry-run / patch。
+- 用户明确说要保留 / 沿用公式,并接受公式重算风险时,才可以用 `--allow-formulas`。不要为了省事绕过公式闸门。
+
+给用户的话术:
+
+> 我扫到这个 Excel 里还有公式,先停一下。你想怎么处理:把公式复制粘贴为值、导出一份无公式版本,还是这些公式本来就要沿用?如果要沿用,我可以保留公式继续做候选,但候选生成后需要用 Excel/WPS 或项目导出工具重算一遍。
+
+### 如果用户明确要沿用公式
+
+这属于**带公式流程**,不是普通配表修改:
+
+1. 先确认一句:"这些公式是这张表长期维护的一部分,不是临时计算用的吗?"
+2. 告诉用户限制:脚本能保留 / 写入公式文本,但**不会像 Excel 一样重算结果**;如果下游读取的是 Excel 缓存值,必须由 Excel / WPS 或项目原生导出工具重算后再发布。
+3. 先写清楚"最终要的结果":哪些公式格 / 派生字段应该算出什么值,或至少应该和哪些源字段 / 样本行一致。没有预期结果,就不能说验证通过。
+4. 如果本次涉及新增行 / 扩展行数配置,必须明确新行的公式怎么来:复制上一行公式、按某个范围改引用、还是用户会自己补。没确认前不要猜。
+5. 用户明确接受后,才可以在 dry-run 和 patch 命令加 `--allow-formulas`。dry-run / 输出 JSON 里的 `formula_warning` 必须复述给用户。
+6. 生成候选后,用户需要用 Excel / WPS 打开候选让公式重算,或跑项目自己的导出 / 重算脚本。
+7. 重算并保存后,用 `diff_config_tables.py --compare-formula-results` 检查缓存计算结果。`missing_formula_results` 非 0 说明没重算成功;`formula_result_changes` 要逐项对照第 3 步的预期结果。
+8. 只有公式文本、公式算出的值、用户要的最终结果三者都对上,才继续 validate / 覆盖。
+
+给用户的话术:
+
+> 可以沿用公式,但这次就不是普通改表了。我可以用带公式模式保留这些公式,不过脚本不会帮 Excel 重算。你确认这些公式是要长期保留的,候选生成后会用 Excel/WPS 或项目导出工具重算一遍,并且告诉我关键公式格最终应该算成什么结果吗?
 
 ## AI 助手 vs 用户:话术对照
 
@@ -233,9 +266,11 @@ description: >-
 
 ## 副本里我们保留什么、可能丢什么
 
-这个 skill 用 `openpyxl` 读写 `.xlsx`。**一般会保留**:
+这个 skill 用 `openpyxl` 读写 `.xlsx`。**重要**:底层可以读写公式文本,但配表改动流程默认把"源表含公式"当成需要确认的风险,必须先确认处理方式(转值 / 无公式导出 / 沿用公式)再 patch。
 
-- 单元格的值、公式、文本
+在源表已无公式的前提下,**一般会保留**:
+
+- 单元格的值、文本
 - 基础样式(字体 / 字号 / 颜色 / 边框 / 数字格式)
 - 合并单元格、批注
 - 列宽、行高、命名区域
@@ -450,29 +485,35 @@ python3 scripts/learn.py \
    python3 scripts/inspect_config_tables.py --root <用户给的路径> --format md --output <用户给的路径>/inventory.md --patch-template <用户给的路径>/patch.json
    ```
 3. **读 inventory.md** —— 知道表里都有什么 sheet、每张 sheet 的字段名。**留意 HINT 提示**(`row 1 像中文 / row 2 像英文字段`、`row N 像注释`)。如果开头有 **`## Project Memory`** 段,**先读它**,把已知规律应用到本任务,不要重复问用户已经记录过的事。
-4. **读 patch.json 骨架** —— 它已经按 per-sheet 自动检测填好了 `field_row / meta_rows / data_start_row / key_field / _fields_available`。**不要凭印象写 schema,在骨架上填 `updates` / `appends` 就行**。
-5. **按任务大小做差集**,拿到确认。**差集详细程度跟任务复杂度匹配,见下面 "差集详细程度按任务大小分级"**。复述时主动应用 `references/rpg-config-patterns.md` 里的 5 条心智模型。
-6. **patch dry-run**:
+4. **公式闸门** —— 如果 inventory 里有 `FORMULA WARNING`,或 `patch_xlsx.py` 报 "contains formula cell(s)",本轮先停,让用户决定处理方式:转值 / 导出无公式版本 / 沿用公式。用户明确要沿用公式时,走上面的"带公式流程"。
+5. **读 patch.json 骨架** —— 它已经按 per-sheet 自动检测填好了 `field_row / meta_rows / data_start_row / key_field / _fields_available`。**不要凭印象写 schema,在骨架上填 `updates` / `appends` 就行**。
+6. **按任务大小做差集**,拿到确认。**差集详细程度跟任务复杂度匹配,见下面 "差集详细程度按任务大小分级"**。复述时主动应用 `references/rpg-config-patterns.md` 里的 5 条心智模型。
+7. **patch dry-run**:
    ```bash
    python3 scripts/patch_xlsx.py --source X.xlsx --output X_candidate.xlsx --patch patch.json --dry-run
    ```
    读 `Updates / Notes / Appends` 三段输出,拿出来给用户看。
-7. **patch 实际生成副本**(去掉 `--dry-run`)。脚本会自动:`--output` 已存在加时间戳;源==输出立即报错;Excel 把候选打开着也立即报错并告诉你关闭。
-8. **diff 对比**:
+8. **patch 实际生成副本**(去掉 `--dry-run`)。脚本会自动:`--output` 已存在加时间戳;源==输出立即报错;Excel 把候选打开着也立即报错并告诉你关闭。
+9. **diff 对比**:
    ```bash
    python3 scripts/diff_config_tables.py --source X.xlsx --candidate X_candidate.xlsx --output diff.md
    ```
-9. **validate_refs 跨表对账**(默认 per-sheet auto-detect,不用传参):
+   如果本轮沿用公式,候选用 Excel / WPS 或项目工具重算并保存后,加公式结果校验:
+   ```bash
+   python3 scripts/diff_config_tables.py --source X.xlsx --candidate X_candidate.xlsx --output diff.md --compare-formula-results
+   ```
+   `missing_formula_results` 必须为 0;`formula_result_changes` 必须和用户确认过的最终结果一致。
+10. **validate_refs 跨表对账**(默认 per-sheet auto-detect,不用传参):
    ```bash
    python3 scripts/validate_refs.py --workbook X_candidate.xlsx
    ```
    **exit 非 0 = 有 orphan,先解决再覆盖**。
-10. **把副本路径告诉用户**,等明确"覆盖"指令。**沙盒拒写就不绕**,把路径交给用户手动操作(参见上面 *沙盒不让你覆盖原表怎么办*)。
-11. **任务结束前**,如果过程中发现了稳定的项目规律(命名约定 / 跨表对应 / 否决过的做法 等),**主动问用户**"要存到 `.ai-config-table/` 吗?",用户说存就跑 `scripts/learn.py`。下次开工就少问一遍。
+11. **把副本路径告诉用户**,等明确"覆盖"指令。**沙盒拒写就不绕**,把路径交给用户手动操作(参见上面 *沙盒不让你覆盖原表怎么办*)。
+12. **任务结束前**,如果过程中发现了稳定的项目规律(命名约定 / 跨表对应 / 否决过的做法 等),**主动问用户**"要存到 `.ai-config-table/` 吗?",用户说存就跑 `scripts/learn.py`。下次开工就少问一遍。
 
 **任何一步报错,先读错误信息**:脚本现在会给出"Did you mean …?" 的建议(field / sheet / key 拼错时),`?` 路径会提示用 `--config`,Excel 锁文件会提示关闭工作簿。**不要尝试绕过错误,按错误信息修**。
 
-## RPG 配表通用心智模型(进入第 5 步之前心里过一遍)
+## RPG 配表通用心智模型(复述改动前心里过一遍)
 
 跟用户复述改动前,**心里过一遍** `references/rpg-config-patterns.md` 里 5 条通用 RPG 配表反模式 / 方法。具体到当前任务,只在该条适用时主动提:
 
@@ -493,7 +534,8 @@ python3 scripts/learn.py \
 | 查某个字段是啥 | inspect → 回答 | 不用差集 |
 | 改一行某个值,无跨表 | inspect → 1 句话总结 → dry-run → 用户 OK → 生成 → diff | **1 句话**:"改 X 行 Y 字段 Z→W,其他不动" |
 | 加 1-5 行 | inspect → **4 段差集** → dry-run → 生成 → diff → validate_refs | **4 段差集**(见下) |
-| 10+ 行 / 新 ID / 跨表 / 公式 / 表结构 | 完整 7 步 + spec | **4 段差集 + spec 兜底** |
+| 源表有公式 | inspect / patch 报公式 → 先问用户处理方式;转值 / 无公式导出后重新 inspect,沿用公式则走带公式流程 | 先不生成差集,解除阻塞后再按原任务分级 |
+| 10+ 行 / 新 ID / 跨表 / 表结构 | 完整流程 + spec | **4 段差集 + spec 兜底** |
 
 ### 差集详细程度按任务大小分级
 
@@ -554,21 +596,29 @@ inspect 现在会自动建议:**如果第 1 行像中文显示名、第 2 行像
 
 **`--patch-template` 强烈推荐**:它会为每张 Excel sheet 预填 `field_row` / `meta_rows` / `data_start_row` / `key_field` 和 `_fields_available` 字段名列表。你只需要在 `updates` / `appends` 数组里加内容就行,**不要凭印象写 patch JSON 的 schema**。
 
-### 2. 建项目档案(可选)
+### 2. 公式闸门
+
+如果 inventory 里出现 `FORMULA WARNING`,先停下。告诉用户公式位置示例,让用户选择:清公式 / 粘贴为值、导出无公式版本,或沿用公式。
+
+`patch_xlsx.py` 也会在 dry-run 和实际 patch 前检查源工作簿;只要还有公式就直接拒绝继续。
+
+如果用户明确说公式要沿用 / 保留,按上方"带公式流程"处理,不要把 `--allow-formulas` 当普通开关。
+
+### 3. 建项目档案(可选)
 
 复杂项目首次接入时,**AI 内部** 用 `references/project-profile-template.md` 走一遍流程,留底自己用。**不要丢给用户填**。
 
 反复做同一个项目,按 `references/config-reference-playbook.md` 搭知识层。
 
-### 3. 跟用户确认
+### 4. 跟用户确认
 
 用大白话:动哪个文件、加 / 改 / 删哪几行、可能影响哪些别的表、只生成副本还是会覆盖、风险高低。
 
-### 4. (中 / 高风险)用 spec 自我组织
+### 5. (中 / 高风险)用 spec 自我组织
 
 **AI 内部** 用 `references/change-spec-template.md` 整理思路 —— 给用户看一段话总结,完整 spec 自己留底,不要落盘给用户。
 
-### 5. 生成副本
+### 6. 生成副本
 
 **patch JSON 的精确格式见 [`references/patch-format.md`](references/patch-format.md)**(不要凭印象写 — 用 inspect 的 `--patch-template` 拿骨架,在骨架上填)。
 
@@ -593,19 +643,23 @@ python3 scripts/patch_xlsx.py --source table.xlsx --output table_candidate.xlsx 
 
 **推荐**:每个改动都顺手填一句 `note`。表里看就知道这格谁改的、为什么。Appends 想填备注直接在 row 字典里写 `"备注": "..."`。
 
-### 6. 校验
+### 7. 校验
 
 ```bash
 python3 scripts/diff_config_tables.py --source table.xlsx --candidate table_candidate.xlsx --output diff.md
+# 沿用公式时,先用 Excel / WPS 或项目工具重算候选并保存,再加:
+python3 scripts/diff_config_tables.py --source table.xlsx --candidate table_candidate.xlsx --output diff.md --compare-formula-results
 # 跨表引用对账:
 python3 scripts/validate_refs.py --workbook table_candidate.xlsx --field-row 2 --meta-rows 1,3,4
 ```
+
+带公式流程里,`missing_formula_results` 非 0 = 候选还没有可读的公式计算结果,不能覆盖。`formula_result_changes` 不是自动失败,但必须逐项对照"最终要的结果"确认。
 
 `validate_refs.py` 自动检测「`Item.LocKey` 指向 `LocText.LocKey`」这种引用,跑出来如果有 orphan,**先解决再覆盖**。
 
 `references/validation-checklist.md` 是 **AI 内部** 走清单用 —— 给用户一段话总结就行。
 
-### 7. 交付
+### 8. 交付
 
 - 副本绝对路径
 - 一段话:改了什么
@@ -627,6 +681,8 @@ python3 scripts/patch_xlsx.py --source x.xlsx --output x_candidate.xlsx --patch 
 
 # C. 对比 + 跨表引用对账
 python3 scripts/diff_config_tables.py --source x.xlsx --candidate x_candidate.xlsx --output diff.md
+# 带公式候选重算后:
+python3 scripts/diff_config_tables.py --source x.xlsx --candidate x_candidate.xlsx --output diff.md --compare-formula-results
 python3 scripts/validate_refs.py --workbook x_candidate.xlsx
 ```
 
@@ -636,6 +692,7 @@ patch JSON 格式参考:[`references/patch-format.md`](references/patch-format.m
 ## 操作原则
 
 - **源表默认只读**。副本先行,覆盖只在用户明确点头之后。
+- **源表含公式先停**。让用户决定转值、导出无公式版本,还是沿用公式;沿用时必须验算公式结果。
 - **不发明**。不知道的字段、ID、引用,要么问,要么标 unknown。
 - **项目原生工具 > 自带脚本**。项目自己的 `validate` / `build` / `export` 优先。
 - **多行表头是常态**(中文名 / 英文字段 / 类型 / 注释)。inspect 会主动建议。
@@ -669,6 +726,7 @@ patch JSON 格式参考:[`references/patch-format.md`](references/patch-format.m
 ## 反模式
 
 - 没发现 + 没确认就直接改源表。
+- 源表里还有公式时不确认用途就继续 patch,尤其是追加行 / 扩行数配置。
 - 仅凭 ID 区间、文件名片段去推业务含义。
 - 改主表不查本地化 / 资源 / 奖励 / 解锁条件。
 - 把客户端 / 服务端生成产物当成"数据源真相"。

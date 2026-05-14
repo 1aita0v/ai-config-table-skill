@@ -98,6 +98,18 @@ def norm(value: Any) -> str:
     return str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
+def one_line(value: Any, limit: int = 120) -> str:
+    text = norm(value).replace("\n", "\\n")
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
+
+
+def cell_has_formula(cell) -> bool:
+    value = cell.value
+    return getattr(cell, "data_type", None) == "f" or (isinstance(value, str) and value.startswith("="))
+
+
 def trim(row: list[str]) -> list[str]:
     while row and row[-1] == "":
         row.pop()
@@ -413,71 +425,91 @@ def inspect_json(path: Path, args: argparse.Namespace) -> dict[str, Any] | None:
 def inspect_excel(path: Path, args: argparse.Namespace) -> dict[str, Any]:
     load_workbook = load_openpyxl()
     wb = load_workbook(path, read_only=True, data_only=False, keep_vba=path.suffix.lower() == ".xlsm")
-    sheets = []
-    file_hints: list[str] = []
-    # When the user passes neither --field-row nor --meta-rows, show the
-    # per-sheet auto-detected layout in inventory too. Otherwise the inventory
-    # (using global guess_header) and the --patch-template (using per-sheet
-    # auto-detect) report different field_row / data_start_row for the same
-    # sheet, which confuses agents reading both outputs of one inspect run.
-    user_specified_header = args.field_row is not None or bool(args.meta_rows)
-    for ws in wb.worksheets[: args.max_sheets]:
-        rows: list[list[str]] = []
-        for idx, row in enumerate(ws.iter_rows(values_only=True)):
-            rows.append(trim([norm(cell) for cell in row[: args.max_cols]]))
-            if idx + 1 >= args.max_scan_rows:
-                break
-        cli_field_idx, cli_data_start_idx, cli_headers = resolve_header_layout(
-            rows, args.field_row, args.meta_rows, args.header_scan_rows
-        )
-        sheet_hints = detect_layout_hints(rows, args.field_row, args.meta_rows)
-        for hint in sheet_hints:
-            file_hints.append(f"{ws.title}: {hint}")
-        # Per-sheet auto-detect — used by --patch-template regardless of user CLI args,
-        # since global CLI args don't fit heterogeneous-header workbooks.
-        auto_field_row, auto_meta_rows, auto_data_start = auto_detect_layout(rows)
-        auto_headers = rows[auto_field_row - 1] if rows and 0 <= auto_field_row - 1 < len(rows) else []
-        if user_specified_header:
-            disp_field_row = cli_field_idx + 1
-            disp_meta_rows = list(args.meta_rows) if args.meta_rows else []
-            disp_data_start_idx = cli_data_start_idx
-            disp_headers = cli_headers
-        else:
-            disp_field_row = auto_field_row
-            disp_meta_rows = list(auto_meta_rows)
-            disp_data_start_idx = auto_data_start - 1
-            disp_headers = auto_headers
-        sheets.append(
-            {
-                "name": ws.title,
-                "declared_rows": ws.max_row,
-                "declared_cols": ws.max_column,
-                "observed_rows": len(rows),
-                "observed_cols": max((len(row) for row in rows), default=0),
-                "field_row": disp_field_row,
-                "meta_rows": disp_meta_rows,
-                "data_start_row": disp_data_start_idx + 1,
-                "fields": field_summary(disp_headers),
-                "samples": sample_rows(rows, disp_data_start_idx, disp_headers, args.sample_rows),
-                "_auto": {
-                    "field_row": auto_field_row,
-                    "meta_rows": auto_meta_rows,
-                    "data_start_row": auto_data_start,
-                    "fields": [f["name"] for f in field_summary(auto_headers)],
-                    "key_field": next(
-                        (f["name"] for f in field_summary(auto_headers) if f.get("key_candidate")),
-                        None,
-                    ),
-                },
-            }
-        )
-    return {
-        "type": path.suffix.lower().lstrip("."),
-        "path": str(path),
-        "encoding": "binary",
-        "hints": file_hints,
-        "sheets": sheets,
-    }
+    try:
+        sheets = []
+        file_hints: list[str] = []
+        # When the user passes neither --field-row nor --meta-rows, show the
+        # per-sheet auto-detected layout in inventory too. Otherwise the inventory
+        # (using global guess_header) and the --patch-template (using per-sheet
+        # auto-detect) report different field_row / data_start_row for the same
+        # sheet, which confuses agents reading both outputs of one inspect run.
+        user_specified_header = args.field_row is not None or bool(args.meta_rows)
+        for ws in wb.worksheets[: args.max_sheets]:
+            rows: list[list[str]] = []
+            formula_count = 0
+            formula_preview: list[dict[str, str]] = []
+            for idx, row in enumerate(ws.iter_rows()):
+                values: list[str] = []
+                keep_values = idx < args.max_scan_rows
+                for col_idx, cell in enumerate(row, start=1):
+                    if cell_has_formula(cell):
+                        formula_count += 1
+                        if len(formula_preview) < 8:
+                            formula_preview.append(
+                                {
+                                    "cell": cell.coordinate,
+                                    "formula": one_line(cell.value),
+                                }
+                            )
+                    if keep_values and col_idx <= args.max_cols:
+                        values.append(norm(cell.value))
+                if keep_values:
+                    rows.append(trim(values))
+            cli_field_idx, cli_data_start_idx, cli_headers = resolve_header_layout(
+                rows, args.field_row, args.meta_rows, args.header_scan_rows
+            )
+            sheet_hints = detect_layout_hints(rows, args.field_row, args.meta_rows)
+            for hint in sheet_hints:
+                file_hints.append(f"{ws.title}: {hint}")
+            # Per-sheet auto-detect — used by --patch-template regardless of user CLI args,
+            # since global CLI args don't fit heterogeneous-header workbooks.
+            auto_field_row, auto_meta_rows, auto_data_start = auto_detect_layout(rows)
+            auto_headers = rows[auto_field_row - 1] if rows and 0 <= auto_field_row - 1 < len(rows) else []
+            if user_specified_header:
+                disp_field_row = cli_field_idx + 1
+                disp_meta_rows = list(args.meta_rows) if args.meta_rows else []
+                disp_data_start_idx = cli_data_start_idx
+                disp_headers = cli_headers
+            else:
+                disp_field_row = auto_field_row
+                disp_meta_rows = list(auto_meta_rows)
+                disp_data_start_idx = auto_data_start - 1
+                disp_headers = auto_headers
+            sheets.append(
+                {
+                    "name": ws.title,
+                    "declared_rows": ws.max_row,
+                    "declared_cols": ws.max_column,
+                    "observed_rows": len(rows),
+                    "observed_cols": max((len(row) for row in rows), default=0),
+                    "field_row": disp_field_row,
+                    "meta_rows": disp_meta_rows,
+                    "data_start_row": disp_data_start_idx + 1,
+                    "formula_cells_observed": formula_count,
+                    "formula_cells_preview": formula_preview,
+                    "fields": field_summary(disp_headers),
+                    "samples": sample_rows(rows, disp_data_start_idx, disp_headers, args.sample_rows),
+                    "_auto": {
+                        "field_row": auto_field_row,
+                        "meta_rows": auto_meta_rows,
+                        "data_start_row": auto_data_start,
+                        "fields": [f["name"] for f in field_summary(auto_headers)],
+                        "key_field": next(
+                            (f["name"] for f in field_summary(auto_headers) if f.get("key_candidate")),
+                            None,
+                        ),
+                    },
+                }
+            )
+        return {
+            "type": path.suffix.lower().lstrip("."),
+            "path": str(path),
+            "encoding": "binary",
+            "hints": file_hints,
+            "sheets": sheets,
+        }
+    finally:
+        wb.close()
 
 
 def inspect_file(path: Path, args: argparse.Namespace) -> dict[str, Any] | None:
@@ -542,6 +574,17 @@ def render_md(inventory: dict[str, Any]) -> str:
             if data_start:
                 header_info += f" data_start={data_start}"
             lines.append(f"- Sheet: `{sheet['name']}` rows={size_rows} cols={size_cols} {header_info}")
+            formula_count = int(sheet.get("formula_cells_observed") or 0)
+            if formula_count:
+                lines.append(
+                    f"  - FORMULA WARNING: sheet contains {formula_count} formula cell(s). "
+                    "Before changing this workbook, ask the user how to handle formulas: "
+                    "clear/paste values, export a formula-free file, or explicitly preserve formulas."
+                )
+                preview = sheet.get("formula_cells_preview") or []
+                if preview:
+                    refs = ", ".join(f"{item['cell']}: {item['formula']}" for item in preview[:5])
+                    lines.append(f"  - Formula examples: {refs}")
             keys = [f["name"] for f in sheet["fields"] if f["key_candidate"]]
             if keys:
                 lines.append(f"  - Key candidates: {', '.join(keys)}")

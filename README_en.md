@@ -22,20 +22,21 @@ Designers and non-engineers maintain large Excel / CSV configuration tables (ite
 1. The AI overwrites the source file, breaking downstream builds.
 2. The AI misidentifies a column and silently corrupts a row — discovered days later.
 3. A related table (localization, icons) is missed, producing blanks or runtime asserts.
+4. Temporary formulas remain in the sheet, then calculate incorrectly after rows / row-count settings expand.
 
-This skill wraps every edit in a fixed **inspect → preview → candidate → diff → user confirms** pipeline, making "AI does the typing, human decides" the default behavior — not something the prompt has to remind it of.
+This skill wraps every edit in a fixed **inspect → formula gate → preview → candidate → diff → user confirms** pipeline, making "AI does the typing, human decides" the default behavior — not something the prompt has to remind it of.
 
 ## Pipeline
 
 ```
-inspect        →  patch (dry-run)  →  patch          →  diff             →  validate_refs
-scan tables       preview cells       copy source,      compare source     cross-table FK
-emit inventory    do not write        edit candidate,   vs candidate per   (orphan) check —
-+ patch skeleton                      mark edited yellow sheet              last guard before
-                                                                            overwrite
+inspect        →  formula gate      →  patch (dry-run)  →  patch          →  diff             →  validate_refs
+scan tables       choose handling       preview cells       copy source,      compare source     cross-table FK
+emit inventory    values or preserve    do not write        edit candidate,   vs candidate per   (orphan) check —
++ patch skeleton  verify results if kept                  mark edited yellow sheet              last guard before
+                                                                                                  overwrite
 ```
 
-Each step is an independent Python script with atomic failure (errors exit cleanly and never leave half-written outputs). The agent follows the `SKILL.md` workflow to chain these five steps and pauses for user input at "generate candidate" and "overwrite source" decision points.
+Each step is an independent Python script with atomic failure (errors exit cleanly and never leave half-written outputs). The agent follows the `SKILL.md` workflow to chain them and pauses for user input at "generate candidate" and "overwrite source" decision points.
 
 ## Quickstart (5 minutes, local)
 
@@ -47,7 +48,7 @@ pip install openpyxl
 # Build a sample workbook (mimics a typical game config: multi-row header + loc + reward tables)
 python3 examples/build_sample.py
 
-# Run the full 5-step pipeline
+# Run the full pipeline
 python3 scripts/inspect_config_tables.py --root examples/sample.xlsx --format md --output inventory.md --patch-template patch.json
 python3 scripts/patch_xlsx.py     --source examples/sample.xlsx --output examples/sample_candidate.xlsx --patch examples/sample-patch.json --dry-run
 python3 scripts/patch_xlsx.py     --source examples/sample.xlsx --output examples/sample_candidate.xlsx --patch examples/sample-patch.json
@@ -83,12 +84,12 @@ The agent activates the skill automatically once installed — the YAML trigger 
 | [`SKILL.md`](SKILL.md) | The workflow the AI follows — decision points, dialogue samples, change-set tiering, platform notes, project memory |
 | [`scripts/inspect_config_tables.py`](scripts/inspect_config_tables.py) | Scans a config directory; emits `inventory.md` and a pre-filled `patch.json` skeleton |
 | [`scripts/patch_xlsx.py`](scripts/patch_xlsx.py) | Copies source to candidate, applies the patch JSON, highlights edited cells; supports `--dry-run` |
-| [`scripts/diff_config_tables.py`](scripts/diff_config_tables.py) | Compares source and candidate per sheet, surfacing value diffs and formula changes |
+| [`scripts/diff_config_tables.py`](scripts/diff_config_tables.py) | Compares source and candidate per sheet, surfacing value diffs and formula changes; `--compare-formula-results` compares cached formula results after recalculation |
 | [`scripts/validate_refs.py`](scripts/validate_refs.py) | Cross-table FK (orphan) check — auto-detects references like `Item.LocKey → LocText.LocKey` |
 | [`scripts/find_table.py`](scripts/find_table.py) | Keyword search across sheets and fields in an inventory (for vague user descriptions) |
 | [`scripts/learn.py`](scripts/learn.py) | Persists user-confirmed field meanings and conventions into `<config-root>/.ai-config-table/` project memory |
 | [`references/`](references/) | Templates and checklists the AI consults internally — patch JSON format, field-meaning evidence sources, RPG config patterns, pre-release checklist, etc. |
-| [`examples/walkthrough.md`](examples/walkthrough.md) | The full annotated 5-step run on the generated sample workbook |
+| [`examples/walkthrough.md`](examples/walkthrough.md) | The full annotated run on the generated sample workbook |
 | [`agents/openai.yaml`](agents/openai.yaml) | Codex / OpenAI-style agent metadata (skill activation config) |
 
 ## Compatibility
