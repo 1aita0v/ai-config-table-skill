@@ -467,7 +467,10 @@ def render_md(inventory: dict[str, Any]) -> str:
     if dup_sheets:
         sec = ["同名 sheet 出现在多个文件,描述模糊时容易混淆 —— **用户说'某某表'时多确认一次**。"]
         for entry in dup_sheets[:30]:
-            files_str = ", ".join(f"`{rel(p)}`" for p in entry["files"][:5])
+            files = entry["files"]
+            files_str = ", ".join(f"`{rel(p)}`" for p in files[:5])
+            if len(files) > 5:
+                files_str += f" …还有 {len(files) - 5} 处"
             sec.append(_bullet(f"sheet `{entry['sheet']}`: {files_str}"))
         if len(dup_sheets) > 30:
             sec.append(_bullet(f"…还有 {len(dup_sheets) - 30} 条同名 sheet 未展开"))
@@ -500,7 +503,10 @@ def render_md(inventory: dict[str, Any]) -> str:
             sec.append("")
             sec.append("**同名文件出现在不同目录**(可能是同一表的多版本,**别误改**):")
             for d in dup_files:
-                files_str = ", ".join(f"`{rel(p)}`" for p in d["files"][:5])
+                files = d["files"]
+                files_str = ", ".join(f"`{rel(p)}`" for p in files[:5])
+                if len(files) > 5:
+                    files_str += f" …还有 {len(files) - 5} 处"
                 sec.append(_bullet(f"`{d['filename']}`: {files_str}"))
         if sec:
             sections.append(("目录层级 / 业务分类(+ 正式环境识别)", sec))
