@@ -310,7 +310,19 @@ def summarize_duplicate_sheet_names(inventory: dict[str, Any]) -> list[dict[str,
 # Category 8 — directory tree + new/old parallel detection
 # ---------------------------------------------------------------------------
 
-_LEGACY_KEYWORDS = ("new", "old", "legacy", "deprecated", "backup", "archive", "v1", "v2", "v3")
+# Keywords in folder names that signal "this might not be the canonical /
+# production config" — covers new/old parallel, backup, dev/test/staging
+# branches, draft/wip dirs, and version-tagged folders. Hit any of these →
+# AI MUST ask the user which dir is the production source before touching
+# tables.
+_LEGACY_KEYWORDS = (
+    "new", "old", "legacy", "deprecated", "obsolete",
+    "backup", "archive", "snapshot",
+    "dev", "test", "staging", "stage", "preview", "rc",
+    "draft", "wip", "experiment", "experimental",
+    "temp", "tmp", "scratch",
+    "v1", "v2", "v3", "v4", "v5",
+)
 
 
 def _path_parts(path_str: str) -> list[str]:
@@ -463,23 +475,35 @@ def render_md(inventory: dict[str, Any]) -> str:
 
     if layout:
         sec = []
+        legacy = layout.get("legacy_paths") or []
+        dup_files = layout.get("duplicate_filenames") or []
+        if legacy or dup_files:
+            sec.append("⚠️ **检测到「脏数据」信号** —— 项目里存在 new/old/dev/test/backup 等非正式目录,或同名文件并存在多个目录。**AI 第一件事:问用户**:")
+            sec.append("")
+            sec.append("> 我扫到下面这些目录看起来不是单一线上配置(`new/` / `backup/` / `dev/` 之类,或同名文件在不同目录都有)。开工前先确认:")
+            sec.append("> - **哪个目录是当前正式 / 线上配置**(改动最终生效的那一份)?")
+            sec.append("> - 其他目录是历史备份 / 在开发的下一版 / 实验沙盒 / 别的?")
+            sec.append("> 答完我把「正式环境配置路径」记到 `<工程仓>/.ai-config-table/profile.md` 的 `baseline` 字段,下次自动应用。")
+            sec.append("")
+            sec.append("**用户确认前,禁止改这些目录里的任何表**(避免误改备份 / 实验 / 旧版)。")
+            sec.append("")
         if layout.get("folders"):
             sec.append("**顶层子目录分布**(按文件数):")
             for f in layout["folders"]:
                 sec.append(_bullet(f"`{f['name']}/` — {f['files']} 个文件 / {f['sheets']} 个 sheet"))
-        if layout.get("legacy_paths"):
+        if legacy:
             sec.append("")
-            sec.append("**检测到 new/old/legacy 关键字目录**(可能新旧版本并存,**改之前问用户当前用哪个版本**):")
-            for p in layout["legacy_paths"]:
+            sec.append("**疑似非正式目录**(含 new/old/legacy/dev/test/backup/temp/wip 等关键字):")
+            for p in legacy:
                 sec.append(_bullet(f"`{rel(p)}`"))
-        if layout.get("duplicate_filenames"):
+        if dup_files:
             sec.append("")
             sec.append("**同名文件出现在不同目录**(可能是同一表的多版本,**别误改**):")
-            for d in layout["duplicate_filenames"]:
+            for d in dup_files:
                 files_str = ", ".join(f"`{rel(p)}`" for p in d["files"][:5])
                 sec.append(_bullet(f"`{d['filename']}`: {files_str}"))
         if sec:
-            sections.append(("目录层级 / 业务分类", sec))
+            sections.append(("目录层级 / 业务分类(+ 正式环境识别)", sec))
 
     if not sections:
         return ""

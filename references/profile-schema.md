@@ -13,8 +13,8 @@
 - external_config_root: /Users/Shared/...        # ★ 跨仓拓扑才填:配置源不在工程仓内时
 
 ## 多版本布局(无多版本就不写这段)
-- baseline: <配置仓>/trunk/                      # 线上源,diff 的基准
-- current_version: <配置仓>/version_1.1/         # 当前主要在改的版本
+- baseline: <配置仓>/trunk/                      # ★ 线上 / 正式环境配置路径,改动最终生效的那一份;diff 的对照基准
+- current_version: <配置仓>/version_1.1/         # 当前主要在改的版本(无多版本时跟 baseline 一样)
 - known_versions:
     - <配置仓>/version_1.0/   (已上线,等回归)
     - <配置仓>/version_1.2/   (规划中)
@@ -35,6 +35,11 @@
 
 - 首次跨仓接入:用户告诉你 `<工程仓>` 在哪、`<配置仓>` 在哪 → 写下 `engineering_repo` / `config_root` / `external_config_root`
 - 多版本项目首次接入:用户告诉你哪个是线上源、当前在改哪个版本 → 写下 `baseline` / `current_version` / `known_versions`
+- **inspect cat 8 命中脏数据信号**(`new/` / `backup/` / `dev/` / 同名文件并存等):**先停下问用户哪个是正式环境**,落到 `baseline`。**用户确认前,禁止改任何相关目录里的表**(避免误改备份 / 实验 / 旧版)
 - 发现团队有平行写表工具:`ls` 验证存在后 → 写下 `team:` 一行
 
-每次写都问用户"要不要存到 profile.md",**不静默写**。
+每次写都问用户「要不要存到 profile.md」,**不静默写**。
+
+## `baseline` 字段的"权威指针"语义
+
+无论项目是规范多版本(`trunk` + `version_*/`)还是杂乱布局(`new/` + `dev/` + `backup/` 并存),`baseline` 都指向**当前线上 / 正式环境配置的绝对路径**。后续 AI 收到"改 X 表"的模糊指令时,**默认指 baseline 下的那张表**,其他目录里的同名表一律不动 —— 除非用户明示。
