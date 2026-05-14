@@ -4,8 +4,10 @@ description: >-
   Portable AI workflow for safely editing project configuration tables — Excel,
   CSV, TSV, JSON, exported workbooks, cloud sheets, or platform table APIs.
   Activate when the user asks to inspect, document, change, patch, add rows,
-  batch-edit, validate, or review config data. Also triggers on Chinese
-  phrasing: 改配置表, AI 配表, 加一行, 批量改, 配表复核, 跨表引用校验.
+  batch-edit, validate, review, organize, audit, or onboard project config
+  data — including the very first message after a fresh install. Also triggers
+  on Chinese phrasing: 改配置表, AI 配表, 加一行, 批量改, 配表复核,
+  跨表引用校验, 整理配置, 盘点配置, 梳理配置, 看看配置, 接入项目, 装好了.
   Works under Claude Code, Codex, Cursor, or any agent that can run
   Python 3.8+ and read this directory.
 ---
@@ -41,7 +43,7 @@ description: >-
 
 ## 这个 skill 在做什么(6 步)
 
-1. **问** —— 表在哪、什么格式、表头几行,不要猜。
+1. **问** —— 表在哪、什么格式、表头几行,**不要猜、不要凭 cwd 自作主张开扫**。即使 cwd 看着像配置目录(名字带 `配置表` / `config` / `资源` 之类),也得先和用户对一句拿到点头再动 —— Claude Code / Codex 的 cwd 经常**恰好**在用户项目里,但「恰好在」≠「用户授权扫」。详见 *[装完之后第一句话](#装完之后第一句话--永远先问路径不许凭-cwd-开扫)* 章节。
 2. **看一遍** —— 只读扫一遍,记下结构;inspect 自动扫出 **"配表规律候选"**(ID 段、隐藏列、LocKey 模板、目录布局 等 8 类),AI 跟用户确认后入档。
 3. **公式闸门** —— 源表只要有公式,先停下确认处理方式:转值 / 导出无公式 / 明确沿用公式。
 4. **想清楚** —— 大改才写下来,小改心里有数即可。
@@ -73,7 +75,23 @@ description: >-
 
 ## 遇到不熟悉的配置库时
 
-**判定信号(看 AI 对库的认知状态,不是用户的轮次)**:
+### 装完之后第一句话 —— 永远先问路径,不许凭 cwd 开扫
+
+**装完 skill 后第一轮对话(或第一次接入不认识的库),不管用户说啥 —— 模糊的「帮我看看」「整理一下」、还是具体的「改 10001 品质」 —— 你的第一句回应永远是:**
+
+> 好的。我先**只读扫一遍**,不动你任何原文件,扫完讲一段印象。你的配置表在哪儿?
+> *(如果 cwd 看着像配置目录)* 看到 cwd 是 `<path>`,是这个吗?还是在别处?
+
+**禁止动作清单**(命中任何一条就是反例):
+- 看到 cwd 名字像 `xxx配置表` / `xxx_config` / `资源` / `data` 就直接 `ls` 开扫
+- 内部独白里出现「**或者**我可以查看当前工作目录」「**既然 cwd 看着像配置目录**就...」 —— 这是给自己开口子的起手式,**列出了正确动作然后自己绕过去**,立刻停
+- 没拿到用户对路径的确认就跑 `inspect_config_tables.py` 或任何 `find` / `grep`
+
+Claude Code / Codex 的 cwd 经常**恰好**在用户项目里,但「恰好在」 ≠ 「用户授权扫」。**先问一句拿到点头再动**,这一秒钟的等待是用户对"不动我原文件"承诺的第一次兑现。
+
+拿到路径确认后,再按下面的分流走。
+
+### 判定信号(看 AI 对库的认知状态,不是用户的轮次)
 - `<root-dir>/.ai-config-table/` 不存在,或 inventory.md 开头 `## Project Memory` 段为空 → **AI 不认识这个库**
 - 有内容 → **AI 已经认识**(走主文件 *完整流程* 章节)
 
@@ -94,7 +112,7 @@ description: >-
 
 ### 不熟悉的库,6 步摘要
 
-1. **告诉用户只读扫一遍,不动原文件,问路径**。例外:用户只在问 capability(「你这玩意能干啥」)→ 先答能力边界,**不立刻扫**。
+1. **告诉用户只读扫一遍,不动原文件,问路径**(详细规则见上面 *[装完之后第一句话](#装完之后第一句话--永远先问路径不许凭-cwd-开扫)* —— **不允许凭 cwd 自作主张开扫**)。例外:用户只在问 capability(「你这玩意能干啥」)→ 先答能力边界,**不立刻扫**。
 2. **跑 inspect**,`--output` / `--patch-template` 写成绝对路径 —— **临时产物落 `/tmp/<某子目录>/`**(或系统 temp),不要落用户项目里(避免污染镜像 / 双向同步盘 / build 目录)。`cwd` 通常不在用户项目里,只写文件名会落到错位置。
 3. **读 inventory.md,口语化讲印象**:文件/sheet/主键/跨表引用候选/推测规律(都标"猜")。
 4. **patch_template.json 是骨架**,等用户下指令时再用,不讲给用户听。
