@@ -294,7 +294,9 @@ def validate_patch_schema(patch: Any, patch_path: Path) -> None:
             f"Patch file is missing top-level 'sheets' key ({patch_path}). "
             f"Expected schema: {{'sheets': [...]}} — see references/patch-format.md."
         )
-    unknown = set(patch.keys()) - KNOWN_TOP_LEVEL_KEYS
+    # Underscore-prefix keys are doc-only convention (inspect's --patch-template
+    # writes _generated_by / _help / _root for human inspection); silently skip.
+    unknown = {k for k in patch.keys() if k not in KNOWN_TOP_LEVEL_KEYS and not k.startswith("_")}
     if unknown:
         sys.stderr.write(
             f"[patch_xlsx] warning: unknown top-level keys in patch JSON: "

@@ -50,6 +50,27 @@ description: >-
 
 > 给用户的承诺:**原文件在你明确说"覆盖"之前不会被动**。
 
+## 简单 case 直通车
+
+**90% 的任务** —— 单仓 / 单人 / 改 1 格 / 没多版本 —— 你只需要看 3 节:
+
+1. *[公式闸门](#公式闸门先确认处理方式)* —— 源表有公式先停,选转值 / 沿用
+2. *[不确定怎么做?照这个固定流程走](#不确定怎么做照这个固定流程走给所有-agent-的最低保障)* —— inspect → patch dry-run → patch → diff → validate_refs
+3. *[反模式](#反模式)* —— 看一眼别踩
+
+**下面这些章节只在以下信号出现时打开**:
+
+| 触发信号 | 打开这节 |
+|---|---|
+| `.ai-config-table/` 已存在(你不是第一个 AI) | *[后入者守则](#你不是第一个-ai-时--后入者守则)* |
+| 项目根有 `trunk/` + `version_*/` 多版本布局 | *[多版本配置管理](#多版本配置管理项目有-trunk--version_-这种布局时)* |
+| 配置源在外部 SVN、工程仓是 git(GameDevelop 形态) | *[跨仓拓扑](#跨仓拓扑配置源在-svn工程仓在-git-gamedevelop-形态)* |
+| 用户描述模糊("世界 boss 那张表" / "ConditionExtra 啥意思") | *[用户给的信息模糊怎么办](#用户给的信息模糊怎么办)* |
+| Windows + 中文路径报错 | *[Windows + 非 ASCII 路径](#windows--非-ascii-路径中文目录名--用-config-模式)* |
+| 沙盒拒绝覆盖原表 | *[沙盒不让你覆盖原表怎么办](#沙盒不让你覆盖原表怎么办--别绕交给用户)* |
+
+简单 case 直走 6 步,**不要先去读"后入者 / 多人 / 多版本"那一长段**,会浪费时间。
+
 ## 遇到不熟悉的配置库时
 
 **判定信号(看 AI 对库的认知状态,不是用户的轮次)**:
@@ -218,32 +239,9 @@ python3 scripts/inspect_config_tables.py \
 
 ### `profile.md` 最小 schema
 
-`profile.md` 是 `.ai-config-table/` 里 AI 跟用户共编的"项目身份证"。inspect 把它整段 dump 进 inventory(不做结构化解析,**靠后入 AI 肉眼读**)。最低要写下面 3 个段落,字段名照抄,值用户填:
+`<工程仓>/.ai-config-table/profile.md` 是 AI 跟用户共编的"项目身份证":7 字段(`engineering_repo` / `config_root` / `external_config_root` / `baseline` / `current_version` / `known_versions` / 写表入口),inspect 把它整段 dump 进 Project Memory 段,后入 AI 肉眼读。
 
-```markdown
-# Project profile
-
-## 路径锚点
-- engineering_repo: /Users/.../my-game           # `<工程仓>` 绝对路径(.codex / AGENTS.md 同级)
-- config_root: /Users/.../my-game/data/configs   # `<配置仓>` —— inspect 的 --root 该传这个
-- external_config_root: /Users/Shared/...        # ★ 跨仓拓扑才填:配置源不在工程仓内时
-
-## 多版本布局(无多版本就不写这段)
-- baseline: <配置仓>/trunk/                      # 线上源,diff 的基准
-- current_version: <配置仓>/version_1.1/         # 当前主要在改的版本
-- known_versions:
-    - <配置仓>/version_1.0/   (已上线,等回归)
-    - <配置仓>/version_1.2/   (规划中)
-
-## 写表入口(并行工具记一下,避免后入 AI 误判)
-- skill: scripts/patch_xlsx.py                   # ai-config-table-skill 自带
-- team:  .codex/tools/write_xlsx.py              # 团队自家(可选,有就记)
-```
-
-字段说明:
-- 占位符 `<工程仓>` / `<配置仓>` 是**写给人看的提示**,实际值用绝对路径。
-- inspect 默认把这个文件原文塞进 Project Memory 段;后入 AI **自己读懂上面字段**,不靠工具解析。
-- `external_config_root` 存在 → 提示后入 AI 跑 inspect 时用 `--memory-root <工程仓>`(或读 profile.md 后用脚本自动加上)。
+**完整 schema 模板、字段说明、触发更新时机 → [`references/profile-schema.md`](references/profile-schema.md)**。跨仓拓扑要填 `external_config_root`;多版本项目要填"多版本布局"段。
 
 ### 多版本配置管理(项目有 trunk + version_*/ 这种布局时)
 
@@ -598,92 +596,62 @@ Mac / Linux 默认 UTF-8,中文路径直接走 argv 也没问题,不强制用 `-
 
 ---
 
-## 项目记忆 (.ai-config-table/) —— 越用越聪明的关键
+## 项目记忆 (.ai-config-table/) —— 入档操作手册
 
-每个项目都可以有一个 `.ai-config-table/` 目录,**accumulating** 项目特有的规律(命名约定 / 跨表引用 / ID 段语义 / 备注列约定 等)。
+**这一节只讲"怎么入档、什么时候入档、入档话术"**。落点规则 / 上溯逻辑 / 多版本布局 / 跨仓拓扑 / VCS 同步机制 / 跨人时序 —— 全部见前面 *[多人 + 多版本:项目记忆放在哪、候选写到哪](#多人--多版本项目记忆放在哪候选写到哪)* 章节 + 它链出去的 `references/profile-schema.md` / `references/sync-mechanisms.md`。
 
-**落点规则、多版本布局下放哪、VCS 不绑定 —— 见前面 [*多人 + 多版本:项目记忆放在哪、候选写到哪*](#多人--多版本项目记忆放在哪候选写到哪) 章节**。本节只讲"怎么读、怎么写、什么时候建议入档"。
-
-**关键规则:任何累积都是用户明示同意后写入,绝不静默积累**。
-
-### inspect 自动读
-
-每次跑 inspect,从 `<root>` 沿 parent 向上**最多回溯 3 层**找 `.ai-config-table/`,找到的第一个被读出来,inventory.md 开头会有一段 `## Project Memory` —— **开工前先读这一段**,把里面的规律当作已知前提应用到当前任务。
-
-如果 3 层内都没找到 → 走 *不熟悉的库* 流程,本轮结束时按落点规则问用户"要不要入档"。
+**铁律:任何累积都是用户明示同意后写入,绝不静默积累**。
 
 ### 什么时候建议入档
 
-任务跑完后,**主动问用户**(用户说"存"才存):
+任务跑完后,**主动问用户**(用户说"存"才存)。值得入档的信号:
 
-- 检测到稳定的 **命名规律**(LocKey 都是 `ITEM_<id>_NAME`、技能 ID 第 3 位代表槽位 等等)
-- 摸清了 **跨表引用约定**(Reward.ItemID → Item.ItemID、Skill.BuffID#N → Buff.BuffID)
-- 用户**否决**了一次你以为对的判断(他说 X 不能这样改,要存下来下次别再问)
-- 发现了 **特殊字段** 含义(`AssetCode` 实际不是资源 id 而是分包代码,这种)
+- 稳定的 **命名规律**(LocKey 都是 `ITEM_<id>_NAME`、技能 ID 第 3 位代表槽位)
+- 摸清的 **跨表引用约定**(Reward.ItemID → Item.ItemID、Skill.BuffID#N → Buff.BuffID)
+- 用户**否决**过的判断(他说 X 不能这样改,要存下来下次别再问)
+- **特殊字段** 含义(`AssetCode` 实际不是资源 id 而是分包代码,这种)
 
-**话术示例(用户说"存")**:
+### 入档话术
+
+**用户说"存"**:
 > **AI**: 我注意到这个项目的 LocKey 都是 `ITEM_<id>_NAME` 格式 —— 要把这条记到 `.ai-config-table/` 里吗?下次加道具我就直接按这个生成,不再问你。
 >
 > **用户**: 存。
 >
-> **AI**: *(跑 `learn.py`)* 记下了。下次 inspect 一跑,这条会出现在 inventory.md 开头的 `## Project Memory` 段,我自动应用。
+> **AI**: *(跑 `learn.py`)* 记下了。下次 inspect 一跑,这条会出现在 Project Memory 段,我自动应用。
 
-**反例话术(用户说"不存")**:
-> **AI**: 上面那条命名规律,要不要记到 `.ai-config-table/`?
+**用户说"不存"** —— 立刻打住,**不许换个角度再问一遍**:
+> **AI**: 那条命名规律,要记到 `.ai-config-table/` 吗?
 >
-> **用户**: 算了,下次再说 / 先不存了 / 不用。
+> **用户**: 算了,下次再说 / 不用。
 >
-> **AI**: 好。本轮到此结束,**不再追问**「那至少先记 inventory 路径吧」之类。原文件没动过任何字节,临时 inventory 在那个目录,想留就留、想删就删。
+> **AI**: 好。本轮到此结束,**不再追问**。原文件没动过,临时 inventory 在那个目录,想留想删随你。
 
-—— 用户说"不"就立刻打住,**不许换个角度再问一遍**,也**不许静默写到任何地方**。
-
-### 怎么入档
-
-用户说存,你跑:
+### 怎么入档 —— `learn.py` 一条命令
 
 ```bash
 python3 scripts/learn.py \
   --root /path/to/config \
-  --topic "LocKey 命名规则" \
+  --topic "lockey-rule" \
   --body "所有 LocKey 都是 ITEM_<id>_NAME 格式" \
   --evidence "Item 表 5 条已有数据全符合" \
   --apply-when "加新道具时直接按 ITEM_<新id>_NAME 生成,不再问用户"
 ```
 
-脚本会:
-- **优先**沿 `--root` 向上找已存在的 `.ai-config-table/`(最多 3 层),找到就 append 进去(保证跟 inspect 读的是同一个目录,跨人入档不分裂)
-- 找不到 + 没传 `--memory-root` → 在 `<root>/.ai-config-table/` 新建 + 写 README + 初始化 `learned-patterns.md`
-- 跨仓拓扑(配置源 vs 工程仓不同树)→ 加 `--memory-root <工程仓>`,落点强制锁到那里
-- 把这条 pattern append 进 `learned-patterns.md`,带日期戳
-- stderr 会打印实际落到哪个目录,对账方便
+落点逻辑(跟 inspect 读取完全一致,不会分裂):
 
-### 项目档案(profile)
+- 默认沿 `--root` 向上找已存在的 `.ai-config-table/`(最多 3 层),找到就 append 进去
+- 找不到 → 在 `<root>/.ai-config-table/` 新建 + 写 README + 初始化 `learned-patterns.md`
+- 跨仓拓扑 → 加 `--memory-root <工程仓>` 强制锁定
+- stderr 打印实际落到哪个目录,对账方便
 
-`<工程仓>/.ai-config-table/profile.md` 是项目级长期约定(表结构 / 命名 / 多版本布局 / 跨仓路径锚点)。schema 见前面 *[`profile.md` 最小 schema](#profilemd-最小-schema)*。用 Read / Write 直接维护(没专门脚本 —— 这种东西需要 AI 跟用户共同编辑,不适合命令行)。inspect 自动把它整段塞进 Project Memory 段。
+**`topic` 用稳定 slug**(英文小写 + 短横线),原因见 [`references/sync-mechanisms.md`](references/sync-mechanisms.md#跨人入档时序约定)。
 
-### `.ai-config-table/` 要不要进 VCS / 怎么同步
+### profile.md (跟 `learned-patterns.md` 平行的另一份记忆)
 
-由用户决定:
+`profile.md` 装项目级长期约定(路径锚点 / 多版本布局 / 写表入口)。**没专门脚本**,AI 用 Read / Write 直接维护;inspect 自动把它整段塞进 Project Memory 段。
 
-| VCS / 同步机制 | 入档命令 | 备注 |
-|---|---|---|
-| **git** | `git add .ai-config-table/ && git commit -m "..." && git push` | 最常见,跟代码一起走 |
-| **svn**(单仓 SVN 项目) | `svn add .ai-config-table/ && svn ci -m "..."` | SVN 工作副本,在工程仓根加进版本控制 |
-| **Dropbox / 坚果云 / OneDrive** | 不用命令,**自动双向同步** | 但**有同名文件冲突时同步工具会生成 `.conflict.<host>` 副本**,要手解 |
-| **共享盘 (SMB/NFS)** | 不用命令,直接落盘共享 | 多人同时写有覆盖风险,**约定一个人负责入档**比抢着写稳 |
-| **邮件 / IM 发包** | 手动 zip 发,接收方解到 `<工程仓>/` | 最原始,小团队 OK |
-| **不同步**(个人本地) | `.gitignore` / `.svnignore` 加上 `.ai-config-table/` | 私人笔记,不分享 |
-
-**skill 不替用户挑、不绑 git**。问一次:"这条要团队共享(进 VCS / 走 Dropbox)还是只你本地用?",照用户选的走。
-
-### 跨人入档的时序约定(避免 commit 冲突)
-
-多人同时入档容易 git merge conflict / Dropbox 冲突副本。最低约束:
-
-1. **topic 用稳定 slug**(英文小写 + 短横线 + 项目内唯一前缀,例 `lockey-rule` / `gamedev-resource-row-index`),不用纯中文长 topic。冲突时方便 grep 定位。
-2. **AI 不主动 `git commit`,只 `git add` + 提示用户**。一句话告诉用户"我 append 完了,要 commit 你来",commit 时点和 message 由用户决定 —— 避免 AI 把 WIP 改动一锅端 commit 掉。
-3. **冲突由用户手解**:`learned-patterns.md` 是纯 Markdown,git merge 失败时 100% 能手动 resolve(双方的 entry 顺序 / 重复都不致命)。AI 看到冲突时**停下**,把冲突段贴给用户,问"两条都留 / 留哪条"。
-4. **同 topic 二次入档 = 修订前一条**:不要在 `learned-patterns.md` 留 2 个同名 topic 还差异冲突。要么写"修订:旧 → 新",要么直接编辑前一条。
+Schema + 字段说明 + 触发更新时机 → [`references/profile-schema.md`](references/profile-schema.md)。
 
 ---
 
@@ -949,8 +917,10 @@ patch JSON 格式参考:[`references/patch-format.md`](references/patch-format.m
 - 把 `references/` 模板当作业丢给用户填。
 - 把 patch JSON 或 shell 命令贴给用户读。
 - 想办法绕过运行环境的写保护去覆盖原表。
-- 后入 AI 把项目本地约定 / 旧工具引用 / 包结构当成 skill bug 来 audit,而不是继承既有 setup(见 *你不是第一个 AI 时 —— 后入者守则*)。
-- 多版本项目里不问版本就改 `trunk/` 或别的版本目录(★ trunk = 线上,高危)。
-- 跨版本 merge / 回流让 AI 自动做,而不是让用户走 VCS(git/svn)工具(见 *多人 + 多版本* 章节)。
-- 把 `.ai-config-table/` 写在 SVN 自动同步镜像 / 自动覆盖目录里(下次同步会丢)。
-- 默认 VCS 是 git,看到 svn / 共享盘 / Dropbox 就建议改成 git(★ skill 不绑定具体 VCS)。
+
+**多人 / 多版本 / 跨仓特有反模式**(完整清单见 *[后入者守则反例](#反例--看到自己写下面这种立刻停)* 和 *[多版本反例](#反例--看到自己写下面这种立刻停-1)* 两节):
+- 后入 AI 把项目本地约定 / 旧工具引用 / 包结构当成 skill bug 来 audit
+- 多版本项目里不问版本就改 `trunk/`(★ trunk = 线上,高危)
+- 跨版本 merge / 回流让 AI 自动做,而不是让用户走 VCS
+- 把 `.ai-config-table/` 写在 SVN 自动同步镜像里(下次同步会丢)
+- 默认 VCS 是 git,看到 svn / Dropbox 就建议改 git(★ skill 不绑 VCS)
