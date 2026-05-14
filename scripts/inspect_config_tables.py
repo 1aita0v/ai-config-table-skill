@@ -33,6 +33,7 @@ from typing import Any, Iterable
 # which Python guarantees when invoked as `python3 scripts/foo.py`.
 from _config_loader import check_paths, load_config_file, merge_into_args
 from _memory_locator import add_memory_root_arg, locate_for_read
+import _pattern_summary
 
 
 SUPPORTED = {".xlsx", ".xlsm", ".csv", ".tsv", ".json"}
@@ -109,6 +110,23 @@ def one_line(value: Any, limit: int = 120) -> str:
 def cell_has_formula(cell) -> bool:
     value = cell.value
     return getattr(cell, "data_type", None) == "f" or (isinstance(value, str) and value.startswith("="))
+
+
+def formula_text(cell) -> str:
+    """Best-effort string of a formula cell's expression.
+
+    ArrayFormula values stringify to ``<openpyxl.worksheet.formula.ArrayFormula
+    object at 0x...>`` by default, which is useless to AI / users. Pull the
+    actual text out instead and wrap in ``{=...}`` (the array-formula brace
+    convention). Falls through to str(value) for normal formula strings.
+    """
+    value = cell.value
+    text = getattr(value, "text", None)
+    if isinstance(text, str) and text:
+        if text.startswith("="):
+            text = text[1:]
+        return "{=" + text + "}"
+    return str(value) if value is not None else ""
 
 
 def trim(row: list[str]) -> list[str]:
@@ -197,6 +215,58 @@ def field_summary(headers: list[str]) -> list[dict[str, Any]]:
             continue
         result.append({"index": idx, "name": name, "key_candidate": is_key_candidate(name)})
     return result
+
+
+def collect_key_values(rows: list[list[str]], data_start_idx: int, key_col_idx: int | None, cap: int = 500) -> list[str]:
+    """Pull unique values from the key column, up to ``cap`` entries.
+
+    Powers the pattern-summary ID-bucket analyzer downstream. Returned values
+    are strings (already normalised by inspect's row read); analyzer decides
+    whether they're numeric.
+    """
+    if key_col_idx is None:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for row in rows[data_start_idx:]:
+        if key_col_idx >= len(row):
+            continue
+        value = row[key_col_idx]
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+        if len(out) >= cap:
+            break
+    return out
+
+
+def collect_hidden_columns(rows: list[list[str]], data_start_idx: int, headers: list[str]) -> list[dict[str, Any]]:
+    """Find columns where the header is empty but data rows have content.
+
+    Common pattern in game configs: a strategy/comment column lives at col 2
+    with no header in the field row, but every data row has a Chinese note.
+    Tools that index by header name don't see it; flag it so editors don't
+    accidentally clobber.
+    """
+    if not headers:
+        return []
+    hidden: list[dict[str, Any]] = []
+    for col_idx in range(len(headers)):
+        if headers[col_idx]:
+            continue
+        samples: list[str] = []
+        for row in rows[data_start_idx:]:
+            if col_idx >= len(row):
+                continue
+            value = row[col_idx]
+            if value:
+                samples.append(value)
+            if len(samples) >= 3:
+                break
+        if samples:
+            hidden.append({"col_index": col_idx + 1, "sample_values": samples})
+    return hidden
 
 
 def sample_rows(rows: list[list[str]], data_start_idx: int, headers: list[str], sample_count: int) -> list[dict[str, str]]:
@@ -449,7 +519,7 @@ def inspect_excel(path: Path, args: argparse.Namespace) -> dict[str, Any]:
                             formula_preview.append(
                                 {
                                     "cell": cell.coordinate,
-                                    "formula": one_line(cell.value),
+                                    "formula": one_line(formula_text(cell)),
                                 }
                             )
                     if keep_values and col_idx <= args.max_cols:
@@ -476,6 +546,14 @@ def inspect_excel(path: Path, args: argparse.Namespace) -> dict[str, Any]:
                 disp_meta_rows = list(auto_meta_rows)
                 disp_data_start_idx = auto_data_start - 1
                 disp_headers = auto_headers
+            disp_fields = field_summary(disp_headers)
+            disp_key_field = next((f["name"] for f in disp_fields if f.get("key_candidate")), None)
+            disp_key_col_idx = None
+            if disp_key_field is not None:
+                for idx, name in enumerate(disp_headers):
+                    if name == disp_key_field:
+                        disp_key_col_idx = idx
+                        break
             sheets.append(
                 {
                     "name": ws.title,
@@ -488,8 +566,10 @@ def inspect_excel(path: Path, args: argparse.Namespace) -> dict[str, Any]:
                     "data_start_row": disp_data_start_idx + 1,
                     "formula_cells_observed": formula_count,
                     "formula_cells_preview": formula_preview,
-                    "fields": field_summary(disp_headers),
+                    "fields": disp_fields,
                     "samples": sample_rows(rows, disp_data_start_idx, disp_headers, args.sample_rows),
+                    "key_values": collect_key_values(rows, disp_data_start_idx, disp_key_col_idx),
+                    "hidden_columns": collect_hidden_columns(rows, disp_data_start_idx, disp_headers),
                     "_auto": {
                         "field_row": auto_field_row,
                         "meta_rows": auto_meta_rows,
@@ -551,6 +631,10 @@ def render_md(inventory: dict[str, Any]) -> str:
             lines.append("")
             lines.append(body.rstrip())
             lines.append("")
+    patterns_md = inventory.get("pattern_summary_md")
+    if patterns_md:
+        lines.append(patterns_md.rstrip())
+        lines.append("")
     for file_info in inventory["files"]:
         lines.append(f"## {file_info['path']}")
         lines.append("")
@@ -650,6 +734,13 @@ def parse_args() -> argparse.Namespace:
              "Designed for the agent to fill in `updates` / `appends` without inventing the schema.",
     )
     add_memory_root_arg(parser)
+    parser.add_argument(
+        "--no-pattern-summary",
+        action="store_true",
+        help="Skip the '配表规律候选' section (ID buckets, array fields, hidden cols, LocKey templates, "
+             "directory layout, etc.). On by default — output goes into inventory.md between Project Memory "
+             "and the file listings. Use --no-pattern-summary on huge projects if scan time matters.",
+    )
     parser.add_argument("--max-files", type=int, default=200)
     parser.add_argument("--max-sheets", type=int, default=80)
     parser.add_argument("--max-scan-rows", type=int, default=200)
@@ -798,6 +889,10 @@ def main() -> None:
     memory = read_project_memory(args.root, memory_root=args.memory_root)
     if memory is not None:
         inventory["memory"] = memory
+    if not args.no_pattern_summary:
+        patterns_md = _pattern_summary.render_md(inventory)
+        if patterns_md:
+            inventory["pattern_summary_md"] = patterns_md
     text = json.dumps(inventory, ensure_ascii=False, indent=2) if args.format == "json" else render_md(inventory)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

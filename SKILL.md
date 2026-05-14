@@ -42,7 +42,7 @@ description: >-
 ## 这个 skill 在做什么(6 步)
 
 1. **问** —— 表在哪、什么格式、表头几行,不要猜。
-2. **看一遍** —— 只读扫一遍,记下结构。
+2. **看一遍** —— 只读扫一遍,记下结构;inspect 自动扫出 **"配表规律候选"**(ID 段、隐藏列、LocKey 模板、目录布局 等 8 类),AI 跟用户确认后入档。
 3. **公式闸门** —— 源表只要有公式,先停下确认处理方式:转值 / 导出无公式 / 明确沿用公式。
 4. **想清楚** —— 大改才写下来,小改心里有数即可。
 5. **生成副本** —— 把改动应用在副本上,绝不动原表。
@@ -602,6 +602,23 @@ Mac / Linux 默认 UTF-8,中文路径直接走 argv 也没问题,不强制用 `-
 
 **铁律:任何累积都是用户明示同意后写入,绝不静默积累**。
 
+### 入档的起点:inspect 的 "配表规律候选"
+
+inspect 跑完后,inventory.md 会有一段 `## 配表规律候选(脚本扫出来的线索,未确认)`,自动扫出 8 类规律:
+
+1. **数字主键 ID 段** —— 主键有明显段间跳跃(暗示业务分段)
+2. **数组字段组** —— `Foo#1.Bar` / `Foo#2.Bar` 模式(改要整组改)
+3. **跨 sheet 同名字段** —— 字段名在多 sheet 出现(项目级公共字段 / 外键)
+4. **公式分布摘要** —— 哪些 sheet 有公式、top 5(公式闸门提示)
+5. **隐藏列警示** —— 无 header 有数据的列(策划备注列,**严禁碰**)
+6. **LocKey / 命名模板候选** —— string 字段匹配 `<Word>_<Word>_<digits>` 等
+7. **重复 sheet 名警告** —— 同名 sheet 在多个文件(模糊指令时多确认)
+8. **目录层级 / 业务分类** —— 子目录文件 / sheet 数 + `new/old/legacy/` 关键字 + 同名文件并存
+
+**这些都标'猜'/'候选',AI 不能直接当事实用** —— 跟用户确认后才跑 `learn.py` 入档。已经在 `## Project Memory` 出现过的规律,候选会重叠 → 可跳过,优先看 Project Memory。
+
+跑得慢或不想看可加 `--no-pattern-summary` 关掉(不建议,这是经验入档的最便宜入口)。
+
 ### 什么时候建议入档
 
 任务跑完后,**主动问用户**(用户说"存"才存)。值得入档的信号:
@@ -664,7 +681,7 @@ Schema + 字段说明 + 触发更新时机 → [`references/profile-schema.md`](
    ```bash
    python3 scripts/inspect_config_tables.py --root <用户给的路径> --format md --output <用户给的路径>/inventory.md --patch-template <用户给的路径>/patch.json
    ```
-3. **读 inventory.md** —— 知道表里都有什么 sheet、每张 sheet 的字段名。**留意 HINT 提示**(`row 1 像中文 / row 2 像英文字段`、`row N 像注释`)。如果开头有 **`## Project Memory`** 段,**先读它**,把已知规律应用到本任务,不要重复问用户已经记录过的事。
+3. **读 inventory.md** —— 知道表里都有什么 sheet、每张 sheet 的字段名。**留意 HINT 提示**(`row 1 像中文 / row 2 像英文字段`、`row N 像注释`)。如果开头有 **`## Project Memory`** 段,**先读它**,把已知规律应用到本任务,不要重复问用户已经记录过的事。再扫一眼 **`## 配表规律候选`** 段(脚本扫出的 8 类规律,标"猜"),复述时主动应用,任务尾部跟用户确认是否入档。
 4. **公式闸门** —— 如果 inventory 里有 `FORMULA WARNING`,或 `patch_xlsx.py` 报 "contains formula cell(s)",本轮先停,让用户决定处理方式:转值 / 导出无公式版本 / 沿用公式。用户明确要沿用公式时,走上面的"带公式流程"。
 5. **读 patch.json 骨架** —— 它已经按 per-sheet 自动检测填好了 `field_row / meta_rows / data_start_row / key_field / _fields_available`。**不要凭印象写 schema,在骨架上填 `updates` / `appends` 就行**。
 6. **按任务大小做差集**,拿到确认。**差集详细程度跟任务复杂度匹配,见下面 "差集详细程度按任务大小分级"**。复述时主动应用 `references/rpg-config-patterns.md` 里的 5 条心智模型。
