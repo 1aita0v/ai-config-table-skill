@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Append a learned pattern to <config-root>/.ai-config-table/learned-patterns.md
+"""Append a learned pattern to ``.ai-config-table/learned-patterns.md``.
 
 This is how the skill gets smarter over time on a per-project basis. The
 agent observes a stable rule, **asks the user** whether to save it, and
 runs this script only after explicit approval. Nothing accumulates
 silently.
 
-Usage:
+Usage::
 
     python3 scripts/learn.py \\
         --root /path/to/config \\
@@ -15,13 +15,21 @@ Usage:
         --evidence "Item 表 5 条已有数据全符合此模式" \\
         --apply-when "加新道具时,LocKey 直接按 ITEM_<新id>_NAME 生成"
 
-Or for non-ASCII content on Windows, use --config FILE (UTF-8 JSON with
-the same field names as snake_case dest keys).
+Or, for non-ASCII content on Windows, use ``--config FILE`` (UTF-8 JSON
+with the same field names as snake_case dest keys).
 
-The script creates `<root>/.ai-config-table/learned-patterns.md` and a
-small `README.md` on first run. The directory is opt-in per project; the
-agent must explicitly invoke this script (after user approval) for any
-content to land there.
+The memory directory is shared between read (``inspect_config_tables.py``)
+and write (this script). Where it lands is decided by ``_memory_locator``:
+
+  1. ``--memory-root <path>`` honoured first (explicit override).
+  2. Otherwise walk up to 3 ancestors from ``--root`` and reuse the first
+     existing ``.ai-config-table/`` found — so a teammate's入档 stays in
+     the same dir even when they pass different ``--root`` values.
+  3. Only when no existing memory is found, create one at
+     ``<root>/.ai-config-table/`` (first-time入档).
+
+The directory is opt-in per project; the agent must explicitly invoke
+this script (after user approval) for any content to land there.
 """
 
 from __future__ import annotations
@@ -31,8 +39,9 @@ import datetime as dt
 import sys
 from pathlib import Path
 
-# Sibling module — relies on the script's directory being on sys.path[0].
+# Sibling modules — rely on the script's directory being on sys.path[0].
 from _config_loader import check_paths, load_config_file, merge_into_args
+from _memory_locator import add_memory_root_arg, locate_for_read, locate_for_write
 
 
 MEMORY_README = """# .ai-config-table/
@@ -52,10 +61,6 @@ LEARNED_HEADER = """# Learned Patterns
 > 修改 / 删除 / 重组直接编辑此文件,AI 下次会读最新版本。
 
 """
-
-
-def memory_dir_for(root: Path) -> Path:
-    return (root.parent if root.is_file() else root) / ".ai-config-table"
 
 
 def ensure_memory_dir(memory_dir: Path) -> None:
@@ -96,10 +101,11 @@ def parse_args() -> argparse.Namespace:
         help="Read all params from a UTF-8 JSON config file (use on Windows when "
              "paths contain non-ASCII characters).",
     )
+    add_memory_root_arg(parser)
     args = parser.parse_args()
     cfg = load_config_file(args.config)
-    merge_into_args(args, cfg, path_fields=("root",))
-    check_paths(args, ("root", "config"))
+    merge_into_args(args, cfg, path_fields=("root", "memory_root"))
+    check_paths(args, ("root", "config", "memory_root"))
     return args
 
 
@@ -111,7 +117,20 @@ def main() -> None:
     if not args.root.exists():
         raise SystemExit(f"Root not found: {args.root}")
 
-    memory_dir = memory_dir_for(args.root)
+    # Tell the user *which* memory dir we're writing to and why — it's the most
+    # common source of "my入档 disappeared" surprise (e.g. teammate wrote here,
+    # I read from there).
+    located = locate_for_read(args.root, memory_root=args.memory_root)
+    memory_dir = locate_for_write(args.root, memory_root=args.memory_root)
+    if args.memory_root is not None:
+        sys.stderr.write(f"[learn] using --memory-root: {memory_dir}\n")
+    elif located is not None:
+        sys.stderr.write(
+            f"[learn] reusing existing memory ({located[1]} parent(s) above --root): {memory_dir}\n"
+        )
+    else:
+        sys.stderr.write(f"[learn] first-time入档, creating: {memory_dir}\n")
+
     ensure_memory_dir(memory_dir)
     patterns_path = memory_dir / "learned-patterns.md"
 

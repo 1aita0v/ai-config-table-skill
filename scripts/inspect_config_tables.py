@@ -32,6 +32,7 @@ from typing import Any, Iterable
 # Sibling module — relies on the script's directory being on sys.path[0],
 # which Python guarantees when invoked as `python3 scripts/foo.py`.
 from _config_loader import check_paths, load_config_file, merge_into_args
+from _memory_locator import add_memory_root_arg, locate_for_read
 
 
 SUPPORTED = {".xlsx", ".xlsm", ".csv", ".tsv", ".json"}
@@ -648,6 +649,7 @@ def parse_args() -> argparse.Namespace:
              "Excel sheet, with detected field_row / meta_rows / data_start_row / key_field). "
              "Designed for the agent to fill in `updates` / `appends` without inventing the schema.",
     )
+    add_memory_root_arg(parser)
     parser.add_argument("--max-files", type=int, default=200)
     parser.add_argument("--max-sheets", type=int, default=80)
     parser.add_argument("--max-scan-rows", type=int, default=200)
@@ -672,7 +674,7 @@ def parse_args() -> argparse.Namespace:
     cfg = load_config_file(args.config)
     merge_into_args(
         args, cfg,
-        path_fields=("root", "output", "patch_template"),
+        path_fields=("root", "output", "patch_template", "memory_root"),
         list_fields=("meta_rows", "ignore"),
     )
     # Type-coerce string forms passed via CLI (the JSON path is already typed).
@@ -681,23 +683,45 @@ def parse_args() -> argparse.Namespace:
     if isinstance(args.ignore, str):
         args.ignore = parse_ignore(args.ignore)
     # Fail early with a friendly message if any path was mangled by argv encoding.
-    check_paths(args, ("root", "output", "patch_template", "config"))
+    check_paths(args, ("root", "output", "patch_template", "config", "memory_root"))
     return args
 
 
-def read_project_memory(root: Path) -> dict[str, Any] | None:
-    """Read <config-root>/.ai-config-table/ if it exists.
+def read_project_memory(root: Path, memory_root: Path | None = None) -> dict[str, Any] | None:
+    """Read the project's ``.ai-config-table/`` memory directory.
 
-    The memory directory is opt-in per-project — agents create it via
-    scripts/learn.py only when the user explicitly approves saving a learned
-    pattern. Once created, inspect dumps its content into the inventory output
-    so subsequent runs surface what the project already knows.
+    Lookup goes through ``_memory_locator``:
+      1. ``--memory-root <path>`` honoured first (explicit override).
+      2. Otherwise walk up to 3 ancestors from ``root`` and use the first
+         ``.ai-config-table/`` found. This handles the standard case
+         "config files live in a subdir of the engineering repo".
 
-    Returns None if no memory dir is present.
+    The memory directory is opt-in per project — agents create it via
+    ``scripts/learn.py`` only after the user explicitly approves saving a
+    learned pattern. When found, inspect dumps every ``.md`` file inside the
+    inventory output so subsequent runs surface what the project already
+    knows.
+
+    Returns ``None`` when no memory dir is present.
     """
-    memory_dir = (root.parent if root.is_file() else root) / ".ai-config-table"
-    if not memory_dir.is_dir():
+    located = locate_for_read(root, memory_root=memory_root)
+    if located is None:
+        sys.stderr.write(
+            "[inspect] no .ai-config-table/ found within 3 parents of --root "
+            "(walked from --root up). If your engineering repo lives on a "
+            "different directory tree (e.g. external SVN config mirror + "
+            "independent git engineering repo), pass --memory-root <path>.\n"
+        )
         return None
+    memory_dir, levels_up = located
+    if levels_up == -1:
+        sys.stderr.write(f"[inspect] using --memory-root: {memory_dir}\n")
+    elif levels_up == 0:
+        sys.stderr.write(f"[inspect] project memory at --root: {memory_dir}\n")
+    else:
+        sys.stderr.write(
+            f"[inspect] project memory found {levels_up} parent(s) above --root: {memory_dir}\n"
+        )
     memory: dict[str, Any] = {"dir": str(memory_dir), "files": {}}
     # Read every .md file in the memory dir; order is deterministic for stable output.
     for path in sorted(memory_dir.glob("*.md")):
@@ -771,7 +795,7 @@ def main() -> None:
         "tool_versions": tool_versions(include_openpyxl=needs_openpyxl),
         "files": files,
     }
-    memory = read_project_memory(args.root)
+    memory = read_project_memory(args.root, memory_root=args.memory_root)
     if memory is not None:
         inventory["memory"] = memory
     text = json.dumps(inventory, ensure_ascii=False, indent=2) if args.format == "json" else render_md(inventory)

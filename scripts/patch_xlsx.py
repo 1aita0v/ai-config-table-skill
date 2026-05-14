@@ -263,6 +263,46 @@ def last_meaningful_row(ws, min_row: int) -> int:
     return last
 
 
+KNOWN_TOP_LEVEL_KEYS = {"sheets"}
+
+
+def validate_patch_schema(patch: Any, patch_path: Path) -> None:
+    """Reject obviously wrong patch shapes before they silently produce 0 updates.
+
+    The only top-level key patch_xlsx.py reads is ``sheets``. A common AI
+    mistake is to wrap everything in ``{"files": [{"path": ..., "sheets": [...]}]}``
+    — that gets silently ignored (no ``sheets`` at top level → empty loop).
+    Catch this loudly with a pointer to the canonical format.
+    """
+    if not isinstance(patch, dict):
+        raise SystemExit(
+            f"Patch file root must be a JSON object ({patch_path}); got {type(patch).__name__}. "
+            f"Expected schema: {{'sheets': [...]}} — see references/patch-format.md."
+        )
+    if "sheets" not in patch:
+        # Identify likely-wrong wrappers and call them out explicitly.
+        wrong_wrappers = [k for k in ("files", "patches", "workbooks", "sheet") if k in patch]
+        if wrong_wrappers:
+            raise SystemExit(
+                f"Patch file is missing top-level 'sheets' key ({patch_path}); "
+                f"found {wrong_wrappers!r} instead. patch_xlsx.py expects a flat "
+                f"{{'sheets': [...]}} — see references/patch-format.md. If you generated "
+                f"this from inspect's --patch-template, the template uses 'sheets' at the "
+                f"top level; don't wrap it in 'files'/'patches'/'workbooks'."
+            )
+        raise SystemExit(
+            f"Patch file is missing top-level 'sheets' key ({patch_path}). "
+            f"Expected schema: {{'sheets': [...]}} — see references/patch-format.md."
+        )
+    unknown = set(patch.keys()) - KNOWN_TOP_LEVEL_KEYS
+    if unknown:
+        sys.stderr.write(
+            f"[patch_xlsx] warning: unknown top-level keys in patch JSON: "
+            f"{sorted(unknown)!r}. These will be ignored. Known keys: "
+            f"{sorted(KNOWN_TOP_LEVEL_KEYS)!r}. See references/patch-format.md.\n"
+        )
+
+
 def resolve_sheet_layout(sheet_patch: dict[str, Any], ws) -> tuple[int, list[int], int]:
     field_row = sheet_patch.get("field_row") or sheet_patch.get("header_row")
     field_row = int(field_row) if field_row else guess_field_row(ws)
@@ -586,6 +626,8 @@ def main() -> None:
         patch = json.loads(args.patch.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise SystemExit(f"Patch file is not valid JSON ({args.patch}): {exc}") from exc
+
+    validate_patch_schema(patch, args.patch)
 
     if args.dry_run:
         wb = load_workbook(args.source, data_only=False, keep_vba=args.source.suffix.lower() == ".xlsm")
