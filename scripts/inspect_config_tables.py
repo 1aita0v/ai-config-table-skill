@@ -907,6 +907,26 @@ def main() -> None:
         )
         sys.stderr.write(f"[inspect] patch template written to {args.patch_template}\n")
 
+    # 结束摘要 —— 告诉用户做了什么、产出在哪
+    total_sheets = sum(len(f.get("sheets") or []) for f in files)
+    summary_lines = [
+        "✅ 扫描完成",
+        f"  做了什么:扫了 {args.root} ({len(files)} 个文件 / {total_sheets} 个 sheet)",
+    ]
+    if memory is not None:
+        mem_files = ", ".join(memory.get("files", {}).keys()) or "(空)"
+        summary_lines.append(f"  读到项目记忆:{memory['dir']} ({mem_files})")
+    else:
+        summary_lines.append("  项目记忆:没找到(首次接入,任务完成后可问用户是否入档)")
+    if args.output:
+        summary_lines.append(f"  扫描结果(inventory)→ {args.output}")
+    else:
+        summary_lines.append("  扫描结果(inventory)→ 已直接打印,未落盘")
+    if args.patch_template:
+        summary_lines.append(f"  改动骨架(patch_template)→ {args.patch_template}")
+    summary_lines.append("  下一步:读 inventory(尤其 Project Memory 段 + 配表规律候选段),按用户指令填 patch")
+    sys.stderr.write("\n".join(summary_lines) + "\n")
+
 
 if __name__ == "__main__":
     main()

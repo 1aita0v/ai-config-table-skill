@@ -44,31 +44,54 @@ from _config_loader import check_paths, load_config_file, merge_into_args
 from _memory_locator import add_memory_root_arg, locate_for_read, locate_for_write
 
 
-MEMORY_README = """# .ai-config-table/
+MEMORY_README = """# .ai-config-table/ —— AI 项目记忆
 
-这个目录是 **ai-config-table skill 在本项目上的累积学习**。
+这个目录装 **ai-config-table skill 在本项目上的累积经验**。AI 每次 inspect 会自动读这里,开工前把规律应用到当前任务。
 
-- `learned-patterns.md` — AI 跑配表任务时观察到的稳定规律(命名约定 / 跨表引用 / ID 段语义 等)。每条都是用户**明示同意**后入档的,绝不静默累积。
-- 你可以**直接编辑、删除、重组**这里的文件。
-- 决定要不要 commit 进项目仓库由你定:commit 后团队共享;不 commit 就是个人本地经验。
+- `项目规律.md` —— AI 学到的项目特有规则(命名约定 / 跨表引用 / ID 段语义 / 隐藏列约定 等)。每条都是用户**明示同意**后入档,绝不静默累积。
+- `项目档案.md`(可选) —— 项目级长期约定(路径锚点 / 多版本布局 / 写表入口)。AI 跟用户共编,inspect 自动读取。
+- 你可以**直接编辑、删除、重组**这里的文件,下次 inspect 会读最新版。
+- 要不要 commit 进项目仓库由你定:commit 后团队共享;不 commit 就是个人本地经验。
 
-下次 AI 跑 inspect,会自动把这里的内容附在 inventory 末尾,开工前先读、再动手。
+兼容老项目:目录里若已有 `learned-patterns.md` / `profile.md` / `README.md`(老英文名)也照常读取,新增内容写到老文件里 —— 不会出现新旧两份并存。
 """
 
-LEARNED_HEADER = """# Learned Patterns
+LEARNED_HEADER = """# 项目规律(由 ai-config-table skill 累积)
 
-> AI 在本项目上累积的规律。每条入档都是用户明示同意后写入。
+> 每条规律都是用户明示同意后入档。
 > 修改 / 删除 / 重组直接编辑此文件,AI 下次会读最新版本。
 
 """
 
+# 优先使用的中文文件名 + 老英文兼容名。读 / 写都先看老文件,有就用老的(不分裂);
+# 没有老的、第一次入档时用新中文名。
+PATTERNS_FILENAME_NEW = "项目规律.md"
+PATTERNS_FILENAME_LEGACY = "learned-patterns.md"
+README_FILENAME_NEW = "说明.md"
+README_FILENAME_LEGACY = "README.md"
+
+
+def resolve_patterns_path(memory_dir: Path) -> Path:
+    """老英文文件存在就继续往里写;否则首次入档用中文名。"""
+    legacy = memory_dir / PATTERNS_FILENAME_LEGACY
+    if legacy.exists():
+        return legacy
+    return memory_dir / PATTERNS_FILENAME_NEW
+
+
+def resolve_readme_path(memory_dir: Path) -> Path:
+    legacy = memory_dir / README_FILENAME_LEGACY
+    if legacy.exists():
+        return legacy
+    return memory_dir / README_FILENAME_NEW
+
 
 def ensure_memory_dir(memory_dir: Path) -> None:
     memory_dir.mkdir(parents=True, exist_ok=True)
-    readme = memory_dir / "README.md"
+    readme = resolve_readme_path(memory_dir)
     if not readme.exists():
         readme.write_text(MEMORY_README, encoding="utf-8")
-    patterns = memory_dir / "learned-patterns.md"
+    patterns = resolve_patterns_path(memory_dir)
     if not patterns.exists():
         patterns.write_text(LEARNED_HEADER, encoding="utf-8")
 
@@ -132,16 +155,17 @@ def main() -> None:
         sys.stderr.write(f"[learn] first-time入档, creating: {memory_dir}\n")
 
     ensure_memory_dir(memory_dir)
-    patterns_path = memory_dir / "learned-patterns.md"
+    patterns_path = resolve_patterns_path(memory_dir)
 
     block = render_pattern(args.topic, args.body, args.evidence, args.apply_when)
     with patterns_path.open("a", encoding="utf-8") as f:
         f.write(block)
 
     sys.stdout.write(
-        f"Appended pattern to {patterns_path}\n"
-        f"  Topic: {args.topic}\n"
-        f"  This memory will surface in inspect's inventory output on the next run.\n"
+        "✅ 入档完成\n"
+        f"  做了什么:在「项目规律」里追加 1 条 (topic: {args.topic})\n"
+        f"  写到哪了:{patterns_path}\n"
+        f"  下次效果:跑 inspect 时,这条规律会出现在 inventory 顶部的 Project Memory 段,AI 自动应用\n"
     )
 
 

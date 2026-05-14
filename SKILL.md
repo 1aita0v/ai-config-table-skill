@@ -609,7 +609,7 @@ Mac / Linux 默认 UTF-8,中文路径直接走 argv 也没问题,不强制用 `-
 | **inspect sample** | 拉 3-5 行实际值。`1,1` / `0,0`?百分数?ResId 引用?值就在暗示含义 |
 | **meta_rows(注释行)** | 多行表头里通常有一行写策划注释。`field_row=2 meta_rows=[1,3,4]` 的 4 就是 |
 | **跨 sheet 同名字段** | 这个字段在其他 sheet 是不是也出现过?那张表的样本 / 注释清不清楚 |
-| **`.ai-config-table/learned-patterns.md`** | 项目记忆里有没有人记过这个字段 |
+| **`.ai-config-table/项目规律.md`**(老项目 `learned-patterns.md`) | 项目记忆里有没有人记过这个字段 |
 | **RPG 反模式 1**(`references/rpg-config-patterns.md`) | 是不是 ID 段字段?有没有独立业务字段才是真相 |
 
 **带证据问** —— 不要空问"这字段啥意思":
@@ -632,6 +632,16 @@ Mac / Linux 默认 UTF-8,中文路径直接走 argv 也没问题,不强制用 `-
 ## 项目记忆 (.ai-config-table/) —— 入档操作手册
 
 **这一节只讲"怎么入档、什么时候入档、入档话术"**。落点规则 / 上溯逻辑 / 多版本布局 / 跨仓拓扑 / VCS 同步机制 / 跨人时序 —— 全部见前面 *[多人 + 多版本:项目记忆放在哪、候选写到哪](#多人--多版本项目记忆放在哪候选写到哪)* 章节 + 它链出去的 `references/profile-schema.md` / `references/sync-mechanisms.md`。
+
+### `.ai-config-table/` 里有哪几个文件
+
+| 中文名(新建用) | 老英文名(兼容) | 用途 |
+|---|---|---|
+| `项目规律.md` | `learned-patterns.md` | AI 学到的项目特有规则,**`learn.py` 写这个** |
+| `项目档案.md` | `profile.md` | 项目级长期约定(路径锚点 / 多版本 / 写表入口),**AI 用 Read/Write 直接编辑** |
+| `说明.md` | `README.md` | 目录用途说明,`learn.py` 首次新建时写一份 |
+
+老项目已经有英文文件名(`learned-patterns.md` / `profile.md` / `README.md`)的,`learn.py` 会继续往老文件里 append,**不会出现新旧两份并存**;首次入档的新项目则用中文名。读取(inspect)对两种都认。
 
 **铁律:任何累积都是用户明示同意后写入,绝不静默积累**。
 
@@ -691,15 +701,15 @@ python3 scripts/learn.py \
 落点逻辑(跟 inspect 读取完全一致,不会分裂):
 
 - 默认沿 `--root` 向上找已存在的 `.ai-config-table/`(最多 3 层),找到就 append 进去
-- 找不到 → 在 `<root>/.ai-config-table/` 新建 + 写 README + 初始化 `learned-patterns.md`
+- 找不到 → 在 `<root>/.ai-config-table/` 新建 + 写 `说明.md` + 初始化 `项目规律.md`(老项目已有 `learned-patterns.md` 时继续往老文件 append)
 - 跨仓拓扑 → 加 `--memory-root <工程仓>` 强制锁定
 - stderr 打印实际落到哪个目录,对账方便
 
 **`topic` 用稳定 slug**(英文小写 + 短横线),原因见 [`references/sync-mechanisms.md`](references/sync-mechanisms.md#跨人入档时序约定)。
 
-### profile.md (跟 `learned-patterns.md` 平行的另一份记忆)
+### `项目档案.md`(跟 `项目规律.md` 平行的另一份记忆)
 
-`profile.md` 装项目级长期约定(路径锚点 / 多版本布局 / 写表入口)。**没专门脚本**,AI 用 Read / Write 直接维护;inspect 自动把它整段塞进 Project Memory 段。
+`项目档案.md`(老项目沿用 `profile.md`)装项目级长期约定(路径锚点 / 多版本布局 / 写表入口)。**没专门脚本**,AI 用 Read / Write 直接维护;inspect 自动把它整段塞进 Project Memory 段。
 
 Schema + 字段说明 + 触发更新时机 → [`references/profile-schema.md`](references/profile-schema.md)。
 

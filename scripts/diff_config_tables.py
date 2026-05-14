@@ -342,6 +342,19 @@ def main() -> None:
     else:
         sys.stdout.write(text)
 
+    # 结束摘要 —— 做了什么、产出在哪
+    total_changes = sum(
+        s.get("changed_cells", 0)
+        for c in comparisons
+        for s in c.get("sheets", [])
+    )
+    sys.stderr.write(
+        "\n✅ 对比完成\n"
+        f"  做了什么:对比 {args.source} 和 {args.candidate}({total_changes} 处单元格差异)\n"
+        + (f"  对比清单 → {args.output}\n" if args.output else "  对比清单 → 已直接打印,未落盘\n")
+        + "  下一步:把差异念给用户确认 / 让用户用 Excel 打开副本肉眼复核\n"
+    )
+
 
 if __name__ == "__main__":
     main()

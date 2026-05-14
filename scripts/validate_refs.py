@@ -476,10 +476,23 @@ def main() -> None:
     # Non-zero exit on orphans OR schema errors, so CI / scripts catch both.
     total_orphans = sum(r.get("orphan_count", 0) for r in checked_refs)
     error_refs = [r for r in checked_refs if r.get("error")]
-    if total_orphans > 0 or error_refs:
+
+    # 结束摘要 —— 干净 / 有 orphan 分别提示
+    if total_orphans == 0 and not error_refs:
         sys.stderr.write(
-            f"\n[validate_refs] {total_orphans} orphan(s), "
-            f"{len(error_refs)} schema error(s) across {len(checked_refs)} ref(s).\n"
+            "\n✅ 跨表对账完成\n"
+            f"  做了什么:扫了 {len(checked_refs)} 条跨表引用,**没有发现孤儿引用**\n"
+            + (f"  报告 → {args.output}\n" if args.output else "")
+            + "  下一步:可以放心让用户确认覆盖原表\n"
+        )
+    else:
+        sys.stderr.write(
+            f"\n❌ 跨表对账发现问题\n"
+            f"  做了什么:扫了 {len(checked_refs)} 条引用\n"
+            f"  孤儿引用:{total_orphans} 处\n"
+            f"  schema 错误:{len(error_refs)} 处\n"
+            + (f"  报告 → {args.output}\n" if args.output else "")
+            + "  下一步:**不要覆盖原表**,把 orphan 念给用户(可能拼写错 / 引用不存在的 ID / 配套表没同步)\n"
         )
         sys.exit(1)
 

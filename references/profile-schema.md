@@ -1,6 +1,8 @@
-# `profile.md` 最小 schema
+# `项目档案.md` 最小 schema(老项目沿用 `profile.md`)
 
-`<工程仓>/.ai-config-table/profile.md` 是 AI 跟用户共编的"项目身份证"。`inspect_config_tables.py` 把它**整段 dump** 进 inventory 的 `## Project Memory` 段(不做结构化解析,**靠后入 AI 肉眼读**)。
+`<工程仓>/.ai-config-table/项目档案.md`(新项目)或 `<工程仓>/.ai-config-table/profile.md`(老项目继续用)是 AI 跟用户共编的"项目身份证"。`inspect_config_tables.py` 把它**整段 dump** 进 inventory 的 `## Project Memory` 段(不做结构化解析,**靠后入 AI 肉眼读**)。
+
+新建走中文名,老项目继续用老名 —— inspect 读取时两种文件名都认。
 
 下面是最低要写的字段。字段名照抄,值用户填(AI 跟用户共同编辑 / Read / Write 直接维护,没专门脚本)。
 

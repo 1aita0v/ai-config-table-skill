@@ -732,6 +732,18 @@ def main() -> None:
         report["formula_warning"] = formula_warning
         for line in render_formula_override_warning(formula_warning, args.source):
             sys.stderr.write(f"[notice] {line}\n")
+
+    # 结束摘要 —— 告诉用户做了什么、副本在哪、下一步
+    total_updates = sum(s.get("changed_cells", 0) for s in summary)
+    total_appends = sum(s.get("appended_rows", 0) for s in summary)
+    total_notes = sum(s.get("note_writes", 0) for s in summary)
+    sys.stderr.write(
+        "\n✅ 副本生成完成\n"
+        f"  做了什么:{total_updates} 个单元格更新 / {total_appends} 个新行 / {total_notes} 个备注写入\n"
+        f"  源表(没动):{args.source}\n"
+        f"  副本(改了的格子标黄):{output_path}\n"
+        "  下一步:① 跑 diff_config_tables.py 对比 / ② 跑 validate_refs.py 跨表对账 / ③ 都 OK 后让用户确认覆盖\n"
+    )
     sys.stdout.write(json.dumps(report, ensure_ascii=False, indent=2))
 
 
