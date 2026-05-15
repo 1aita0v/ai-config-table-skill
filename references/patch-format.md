@@ -1,5 +1,17 @@
 # Patch 格式
 
+## Contents
+
+- [JSON 顶层结构(示例)](#patch-格式)
+- [Sheet 各字段含义](#sheet-各字段含义)
+- [自动 `note`(备注列)](#自动-note备注列)
+- [多行表头样例](#多行表头样例)
+- [更新模式](#更新模式)
+- [Dry Run](#dry-run)
+- [安全保护](#安全保护)
+
+---
+
 `scripts/patch_xlsx.py` 接受一个 JSON 文件:
 
 ```json
